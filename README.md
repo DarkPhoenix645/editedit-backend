@@ -31,5 +31,5 @@
    3. Create a new agent with "Add Agent" in Management > Fleet > Agents
    4. Copy the enrollment token
 4. Configure Elastic Agent:
-   1. Install [https://taskfile.dev/docs/installation](Task)
+   1. Install [Task](https://taskfile.dev/docs/installation)
    2. From the root of the project, run `task host-agent:enroll <enrollment-token>`
