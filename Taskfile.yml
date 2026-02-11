@@ -1,0 +1,43 @@
+version: "3"
+
+vars:
+  STACK_VERSION: 8.12.0
+  # Should match the net in infrastructure/docker-compose.yml
+  NETWORK: infrastructure_default
+  REPO_ROOT:
+    sh: pwd
+
+tasks:
+  # Enroll a new agent to monitor the host system for testing
+  host-agent:enroll:
+    desc: Enroll and start a host-monitoring Elastic Agent
+    summary: |
+      Usage: task agent:enroll -- <ENROLLMENT_TOKEN>
+    cmds:
+      - |
+        docker run -d \
+          --name=elastic-agent-host \
+          --user=root \
+          --restart=always \
+          --net={{.NETWORK}} \
+          -v {{.REPO_ROOT}}/volumes/certs:/certs:ro \
+          -v /var/log:/var/log:ro \
+          -v /var/run/docker.sock:/var/run/docker.sock:ro \
+          -e FLEET_ENROLL=1 \
+          -e FLEET_URL=https://fleet:8220 \
+          -e FLEET_ENROLLMENT_TOKEN={{.CLI_ARGS}} \
+          -e ELASTICSEARCH_CA=certs/ca/ca.crt \
+          docker.elastic.co/beats/elastic-agent:{{.STACK_VERSION}}
+    preconditions:
+      - sh: "test -d volumes/certs/ca"
+        msg: "Certs directory missing. Run infrastructure setup first."
+
+  host-agent:stop:
+    desc: Stop and remove the host agent
+    cmds:
+      - docker rm -f elastic-agent-host
+
+  host-agent:logs:
+    desc: Tail the agent logs
+    cmds:
+      - docker logs -f elastic-agent-host

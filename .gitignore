@@ -1,0 +1,5 @@
+.env
+DS_Store/
+volumes/certs/*
+volumes/esdata/*
+volumes/lsdata/*
