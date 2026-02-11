@@ -1,0 +1,8 @@
+- pipeline.id: ingest
+  path.config: "/usr/share/logstash/pipeline/ingest.conf"
+
+- pipeline.id: hot
+  path.config: "/usr/share/logstash/pipeline/hot.conf"
+
+- pipeline.id: cold
+  path.config: "/usr/share/logstash/pipeline/cold.conf"
