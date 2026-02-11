@@ -24,12 +24,13 @@
    ENCRYPTION_KEY=<random 32-character string for Kibana encryption>
    ```
 
-2. Run `docker compose up` from the `infrastructure/` directory.
-3. Configure Fleet Server:
+2. Create volumes, from project root run: `mkdir -p volumes/certs volumes/esdata volumes/lsdata`
+3. Run `docker compose up` from the `infrastructure/` directory.
+4. Configure Fleet Server:
    1. In the Kibana UI, go to Management > Fleet > Agent Policies
    2. Create a new policy with the "Collect system logs and metrics" checkbox checked
    3. Create a new agent with "Add Agent" in Management > Fleet > Agents
    4. Copy the enrollment token
-4. Configure Elastic Agent:
+5. Configure Elastic Agent:
    1. Install [Task](https://taskfile.dev/docs/installation)
    2. From the root of the project, run `task host-agent:enroll <enrollment-token>`
