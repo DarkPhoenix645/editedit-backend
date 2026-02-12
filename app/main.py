@@ -1,14 +1,10 @@
 from fastapi import FastAPI
+from app.api.router import api_router
+from app.db.session import engine
+from app.db.models import Base
 
-app = FastAPI(
-    title="ForensIQ Backend",
-    version="1.0.0"
-)
+app = FastAPI(title="EditEdit Backend")
 
-@app.get("/")
-async def root():
-    return {"status": "running", "service": "forensiq-backend"}
+Base.metadata.create_all(bind=engine) 
 
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
+app.include_router(api_router, prefix="/api")
