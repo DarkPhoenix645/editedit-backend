@@ -1,4 +1,6 @@
-## Setup & Run Instructions
+# editedit-backend
+
+## Infra Setup & Run Instructions
 
 1. Create .env in the `infrastructure/` directory:
 
@@ -34,3 +36,27 @@
 5. Configure Elastic Agent:
    1. Install [Task](https://taskfile.dev/docs/installation)
    2. From the root of the project, run `task host-agent:enroll <enrollment-token>`
+
+## FastAPI Backend Setup
+
+1. Configure environment
+
+   ```bash
+   POSTGRES_USER=postgres
+   POSTGRES_PASSWORD=postgres
+   POSTGRES_DB=editedit-db
+   POSTGRES_HOST=db
+   POSTGRES_PORT=5432
+
+   DATABASE_URL=postgresql://postgres:postgres@db:5432/editedit-db
+
+   HOST=0.0.0.0
+   PORT=8000
+
+   SECRET_KEY=lalalala123
+   ```
+
+2. Run with:
+   ```bash
+   docker compose up --build
+   ```
