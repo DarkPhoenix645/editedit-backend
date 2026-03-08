@@ -1,4 +1,5 @@
 .env
+.DS_Store/
 DS_Store/
 volumes/certs/*
 volumes/esdata/*
