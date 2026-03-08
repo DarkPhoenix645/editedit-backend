@@ -8,6 +8,15 @@ vars:
     sh: pwd
 
 tasks:
+  infra:clean:
+    desc: Clean the volumes made during setup and used by ES / LS
+    summary: |
+      usage: task infra:clean
+    cmds:
+      - rm -rf volumes/certs/*
+      - rm -rf volumes/esdata/*
+      - rm -rf volumes/lsdata/*
+
   # Enroll a new agent to monitor the host system for testing
   host-agent:enroll:
     desc: Enroll and start a host-monitoring Elastic Agent
