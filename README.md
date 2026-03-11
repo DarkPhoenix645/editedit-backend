@@ -39,7 +39,7 @@
 
 ## FastAPI Backend Setup
 
-1. Configure environment
+1. Create .env in `app/`:
 
    ```bash
    POSTGRES_USER=postgres
@@ -48,7 +48,8 @@
    POSTGRES_HOST=db
    POSTGRES_PORT=5432
 
-   DATABASE_URL=postgresql://postgres:postgres@db:5432/editedit-db
+   # IMP: use +psycopg in the URL for enabling the use of psycopgv3
+   DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/editedit-db
 
    HOST=0.0.0.0
    PORT=8000
@@ -56,7 +57,17 @@
    SECRET_KEY=lalalala123
    ```
 
-2. Run with:
+2. Create .env in `infrastructure/backend`:
+
+   ```bash
+   POSTGRES_USER=postgres
+   POSTGRES_PASSWORD=postgres
+   POSTGRES_DB=editedit-db
+   POSTGRES_HOST=db
+   POSTGRES_PORT=5432
+   ```
+
+3. Run with:
    ```bash
    docker compose up --build
    ```
