@@ -1,0 +1,57 @@
+server.name: kibana
+server.host: "0.0.0.0"
+
+# --- Elasticsearch Connection ---
+elasticsearch.hosts: ["${ES_URL}"]
+elasticsearch.username: "kibana_system"
+elasticsearch.password: "${ELASTICSEARCH_PASSWORD}"
+elasticsearch.ssl.certificateAuthorities:
+  ["/usr/share/kibana/config/certs/ca/ca.crt"]
+
+# --- Fleet Setup ---
+xpack.fleet.packages:
+  - name: fleet_server
+    version: latest
+  - name: system
+    version: latest
+
+xpack.fleet.agentPolicies:
+  - name: Fleet Server policy
+    id: fleet-server-policy
+    namespace: default
+    is_default_fleet_server: true
+    # Note: Even with Logstash default, Fleet Server policy
+    # should ideally point to ES for its own health telemetry.
+    package_policies:
+      - name: fleet_server-1
+        package:
+          name: fleet_server
+
+# --- Fleet Outputs ---
+xpack.fleet.outputs:
+  # This is the Logstash output that feeds your ingest.conf (port 5044)
+  - id: logstash-ingest
+    name: Logstash Ingest Pipeline
+    type: logstash
+    hosts: ["logstash:5044"]
+    is_default: true
+    is_default_monitoring: true
+    config:
+      # We disable SSL verification here if Logstash is using
+      # self-signed certs or if the agent is internal to the Docker net
+      ssl.verification_mode: none
+
+  # We keep this defined for the Fleet Server itself
+  - id: es-direct
+    name: Elasticsearch Direct
+    type: elasticsearch
+    hosts: ["${ES_URL}"]
+    config:
+      ssl.verification_mode: certificate
+      ssl.certificate_authorities: ["/usr/share/kibana/config/certs/ca/ca.crt"]
+
+# --- Security & Reporting ---
+xpack.reporting.roles.enabled: false
+xpack.security.encryptionKey: "${ENCRYPTION_KEY}"
+xpack.encryptedSavedObjects.encryptionKey: "${ENCRYPTION_KEY}"
+xpack.actions.encryptionKey: "${ENCRYPTION_KEY:abcdefghijklmnopqrstuvwxyz123456docke78909}"
