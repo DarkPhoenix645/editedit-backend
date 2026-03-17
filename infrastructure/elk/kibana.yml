@@ -53,7 +53,7 @@ xpack.fleet.outputs:
     is_default_monitoring: true
     config:
       ssl.verification_mode: certificate
-      ssl.certificate_authorities: ["/usr/share/kibana/config/certs/ca/ca.crt"]
+      ssl.certificate_authorities: ["/usr/share/elastic-agent/config/certs/ca/ca.crt"]
 
   # Optional Logstash output for custom ingest pipelines (not default)
   - id: logstash-ingest
