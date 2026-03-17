@@ -1,14 +1,29 @@
 server.name: kibana
 server.host: "0.0.0.0"
 
+# --- HTTP(S) / TLS ---
+# Kibana serves HTTPS using the same PKI as Elasticsearch.
+# External access should use https://localhost:5601 with the CA below.
+server.ssl.enabled: true
+server.ssl.certificate: /usr/share/kibana/config/certs/kib01/kib01.crt
+server.ssl.key: /usr/share/kibana/config/certs/kib01/kib01.key
+
 # --- Elasticsearch Connection ---
-elasticsearch.hosts: ["${ES_URL}"]
-elasticsearch.username: "kibana_system"
-elasticsearch.password: "${ELASTICSEARCH_PASSWORD}"
+# hosts/password overridable via env: ELASTICSEARCH_HOSTS, ELASTICSEARCH_PASSWORD
+elasticsearch.hosts: ["https://es01:9200"]
+elasticsearch.username: kibana_system
 elasticsearch.ssl.certificateAuthorities:
-  ["/usr/share/kibana/config/certs/ca/ca.crt"]
+  - /usr/share/kibana/config/certs/ca/ca.crt
 
 # --- Fleet Setup ---
+# Default Fleet Server host (required for fleet-server-policy). Service name "fleet" = this compose.
+xpack.fleet.fleetServerHosts:
+  - id: default
+    name: Fleet Server
+    is_default: true
+    host_urls:
+      - https://fleet:8220
+
 xpack.fleet.packages:
   - name: fleet_server
     version: latest
@@ -29,29 +44,27 @@ xpack.fleet.agentPolicies:
 
 # --- Fleet Outputs ---
 xpack.fleet.outputs:
-  # This is the Logstash output that feeds your ingest.conf (port 5044)
+  # Default output for all agents and Fleet Server: send directly to Elasticsearch
+  - id: es-direct
+    name: Elasticsearch Direct
+    type: elasticsearch
+    hosts: ["https://es01:9200"]
+    is_default: true
+    is_default_monitoring: true
+    config:
+      ssl.verification_mode: certificate
+      ssl.certificate_authorities: ["/usr/share/kibana/config/certs/ca/ca.crt"]
+
+  # Optional Logstash output for custom ingest pipelines (not default)
   - id: logstash-ingest
     name: Logstash Ingest Pipeline
     type: logstash
     hosts: ["logstash:5044"]
-    is_default: true
-    is_default_monitoring: true
     config:
       # We disable SSL verification here if Logstash is using
       # self-signed certs or if the agent is internal to the Docker net
       ssl.verification_mode: none
 
-  # We keep this defined for the Fleet Server itself
-  - id: es-direct
-    name: Elasticsearch Direct
-    type: elasticsearch
-    hosts: ["${ES_URL}"]
-    config:
-      ssl.verification_mode: certificate
-      ssl.certificate_authorities: ["/usr/share/kibana/config/certs/ca/ca.crt"]
-
 # --- Security & Reporting ---
+# Encryption keys: set via env (XPACK_*_ENCRYPTIONKEY / XPACK_ACTIONS_ENCRYPTION_KEY).
 xpack.reporting.roles.enabled: false
-xpack.security.encryptionKey: "${ENCRYPTION_KEY}"
-xpack.encryptedSavedObjects.encryptionKey: "${ENCRYPTION_KEY}"
-xpack.actions.encryptionKey: "${ENCRYPTION_KEY:abcdefghijklmnopqrstuvwxyz123456docke78909}"

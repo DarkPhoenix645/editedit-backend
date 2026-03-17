@@ -5,8 +5,8 @@ WORKDIR /app
 RUN pip install uv
 
 COPY ../../app/pyproject.toml ../../app/uv.lock* ./
-RUN uv sync --no-dev --system
+RUN uv sync --no-dev --frozen
 
 COPY ../../app ./app
 
-CMD sh -c "uvicorn app.main:app --host $HOST --port $PORT"
+CMD ["sh", "-c", "uvicorn app.main:app --host $HOST --port $PORT"]

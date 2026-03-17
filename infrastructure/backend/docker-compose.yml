@@ -3,6 +3,7 @@ services:
     build:
       context: ../../
       dockerfile: infrastructure/backend/Dockerfile
+      network: host
     container_name: fastapi-backend
     ports:
       - "${PORT}:8000"

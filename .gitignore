@@ -1,7 +1,10 @@
 .env
+uv.lock
 .DS_Store/
 DS_Store/
-volumes/certs/*
-volumes/esdata/*
-volumes/lsdata/*.DS_store
+infrastructure/elk/volumes
 __pycache__/
+.venv/
+.cursorignore
+.cursor
+elastic-agent-*

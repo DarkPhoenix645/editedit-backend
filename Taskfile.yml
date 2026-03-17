@@ -8,14 +8,24 @@ vars:
     sh: pwd
 
 tasks:
+  infra:mkdir:
+    desc:
+      Create the folders for the volumes made during setup and used by ES / LS
+    summary: |
+      usage: task infra:mkdir
+    cmds:
+      - mkdir -p infrastructure/elk/volumes/certs/*
+      - mkdir -p infrastructure/elk/volumes/esdata/*
+      - mkdir -p infrastructure/elk/volumes/lsdata/*
+
   infra:clean:
     desc: Clean the volumes made during setup and used by ES / LS
     summary: |
       usage: task infra:clean
     cmds:
-      - rm -rf volumes/certs/*
-      - rm -rf volumes/esdata/*
-      - rm -rf volumes/lsdata/*
+      - rm -rf infrastructure/elk/volumes/certs/*
+      - rm -rf infrastructure/elk/volumes/esdata/*
+      - rm -rf infrastructure/elk/volumes/lsdata/*
 
   # Enroll a new agent to monitor the host system for testing
   host-agent:enroll:
@@ -36,7 +46,7 @@ tasks:
           -e FLEET_URL=https://fleet:8220 \
           -e FLEET_ENROLLMENT_TOKEN={{.CLI_ARGS}} \
           -e ELASTICSEARCH_CA=certs/ca/ca.crt \
-          docker.elastic.co/beats/elastic-agent:{{.STACK_VERSION}}
+          docker.elastic.co/elastic-agent/elastic-agent:{{.STACK_VERSION}}
     preconditions:
       - sh: "test -d volumes/certs/ca"
         msg: "Certs directory missing. Run infrastructure setup first."
