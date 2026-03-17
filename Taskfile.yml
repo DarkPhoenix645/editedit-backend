@@ -1,16 +1,16 @@
 version: "3"
 
 vars:
-  STACK_VERSION: 8.12.0
-  # Should match the net in infrastructure/docker-compose.yml
-  NETWORK: infrastructure_default
+  # STACK_VERSION and NETWORK should match as defined in infrastructure/elk/.env and infrastructure/elk/docker-compose.yml
+  STACK_VERSION: 9.3.1
+  NETWORK: elk_default
+  CERTS_PATH: infrastructure/elk/volumes/certs
   REPO_ROOT:
     sh: pwd
 
 tasks:
   infra:mkdir:
-    desc:
-      Create the folders for the volumes made during setup and used by ES / LS
+    desc: Create the folders for the volumes made during setup and used by ES / LS
     summary: |
       usage: task infra:mkdir
     cmds:
@@ -27,11 +27,13 @@ tasks:
       - rm -rf infrastructure/elk/volumes/esdata/*
       - rm -rf infrastructure/elk/volumes/lsdata/*
 
-  # Enroll a new agent to monitor the host system for testing
+  # Enroll a Docker agent to ELK Fleet (infrastructure/elk). Get token from Kibana: Fleet → Add agent.
   host-agent:enroll:
-    desc: Enroll and start a host-monitoring Elastic Agent
+    desc: Enroll Elastic Agent (Docker) to ELK stack Fleet for log collection
     summary: |
-      Usage: task agent:enroll -- <ENROLLMENT_TOKEN>
+      Prereqs: ELK stack running (cd infrastructure/elk && docker compose up -d).
+      Get enrollment token from Kibana: Fleet → Add agent → Enroll in Fleet → copy token.
+      Usage: task host-agent:enroll -- <ENROLLMENT_TOKEN>
     cmds:
       - |
         docker run -d \
@@ -39,17 +41,18 @@ tasks:
           --user=root \
           --restart=always \
           --net={{.NETWORK}} \
-          -v {{.REPO_ROOT}}/volumes/certs:/certs:ro \
+          -v {{.REPO_ROOT}}/{{.CERTS_PATH}}:/certs:ro \
           -v /var/log:/var/log:ro \
           -v /var/run/docker.sock:/var/run/docker.sock:ro \
           -e FLEET_ENROLL=1 \
           -e FLEET_URL=https://fleet:8220 \
           -e FLEET_ENROLLMENT_TOKEN={{.CLI_ARGS}} \
-          -e ELASTICSEARCH_CA=certs/ca/ca.crt \
+          -e FLEET_CA=/certs/ca/ca.crt \
+          -e ELASTICSEARCH_CA=/certs/ca/ca.crt \
           docker.elastic.co/elastic-agent/elastic-agent:{{.STACK_VERSION}}
     preconditions:
-      - sh: "test -d volumes/certs/ca"
-        msg: "Certs directory missing. Run infrastructure setup first."
+      - sh: "test -d {{.CERTS_PATH}}/ca"
+        msg: "ELK certs missing. Run infrastructure/elk setup first (docker compose up -d from infrastructure/elk)."
 
   host-agent:stop:
     desc: Stop and remove the host agent
