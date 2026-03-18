@@ -3,6 +3,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from sqlalchemy.orm import Session
+from uuid import UUID
 
 from app.core.config import settings
 from app.db.session import get_db
@@ -32,7 +33,7 @@ def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    user = db.query(User).filter(User.id == int(user_id)).first()
+    user = db.query(User).filter(User.id == UUID(user_id)).first()
     if not user:
         raise credentials_exception
 

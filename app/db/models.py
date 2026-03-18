@@ -1,4 +1,16 @@
-from sqlalchemy import Column, String, Float, DateTime, ForeignKey, Integer, LargeBinary, BigInteger
+from sqlalchemy import (
+    Column,
+    String,
+    Float,
+    DateTime,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    BigInteger,
+    Text,
+    Index,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -43,8 +55,8 @@ class ForensicHypothesis(Base):
     generation_source = Column(String)
     anomaly_score = Column(Float)
     confidence_score = Column(Float)
-    hypotheses = Column(String)
-    status = Column(String)
+    hypotheses = Column(Text)
+    status = Column(String, server_default="pending")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     case = relationship("ForensicCase", back_populates="hypotheses")
@@ -53,12 +65,12 @@ class ForensicHypothesis(Base):
 class LogSource(Base):
     __tablename__ = "log_sources"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    agent_id = Column(String)
-    source_name = Column(String)
-    static_trust_level = Column(String)
-    dynamic_trust_score = Column(Float)
-    provider_type = Column(String)
-    os_type = Column(String)
+    agent_id = Column(String, unique=True, index=True, nullable=False)
+    source_name = Column(String, nullable=False)
+    static_trust_level = Column(String, index=True, nullable=False)
+    dynamic_trust_score = Column(Float, server_default="1.0", nullable=False)
+    provider_type = Column(String, nullable=False)
+    os_type = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class AccessAuditLog(Base):
@@ -74,27 +86,33 @@ class AccessAuditLog(Base):
     
 class SealedBlock(Base):
     __tablename__ = "sealed_blocks"
+    __table_args__ = (
+        UniqueConstraint("source_id", "sequence_number", name="uq_sealed_blocks_source_sequence"),
+        Index("ix_sealed_blocks_source_window", "source_id", "window_start", "window_end"),
+        Index("ix_sealed_blocks_authoritative_time", "authoritative_time"),
+    )
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    source_id = Column(UUID(as_uuid=True), ForeignKey("log_sources.id"))
+    source_id = Column(UUID(as_uuid=True), ForeignKey("log_sources.id"), nullable=False)
     sequence_number = Column(BigInteger, nullable=False)
-    window_start = Column(DateTime(timezone=True))
-    window_end = Column(DateTime(timezone=True))
-    log_count = Column(Integer)
-    payload_hash = Column(LargeBinary)
-    chain_hash = Column(LargeBinary)
-    tsa_token = Column(LargeBinary, nullable=True)
-    authoritative_time = Column(DateTime(timezone=True))
-    rsa_signature = Column(LargeBinary)
-    signing_key_id = Column(String)
-    storage_uri = Column(String)
+    window_start = Column(DateTime(timezone=True), nullable=False)
+    window_end = Column(DateTime(timezone=True), nullable=False)
+    log_count = Column(Integer, nullable=False)
+    payload_hash = Column(LargeBinary, nullable=False)
+    chain_hash = Column(LargeBinary, nullable=False)
+    tsa_token = Column(LargeBinary, nullable=False)
+    authoritative_time = Column(DateTime(timezone=True), nullable=False)
+    rsa_signature = Column(LargeBinary, nullable=False)
+    signing_key_id = Column(String, nullable=False)
+    storage_uri = Column(String, nullable=False)
 
     traces = relationship("HotColdTrace", back_populates="block")
 
 class HotColdTrace(Base):
     __tablename__ = "hot_cold_trace"
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    elastic_event_id = Column(String, index=True)
-    block_id = Column(UUID(as_uuid=True), ForeignKey("sealed_blocks.id"))
+    elastic_event_id = Column(String, unique=True, index=True, nullable=False)
+    block_id = Column(UUID(as_uuid=True), ForeignKey("sealed_blocks.id"), index=True, nullable=False)
 
     block = relationship("SealedBlock", back_populates="traces")
 
