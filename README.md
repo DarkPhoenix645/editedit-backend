@@ -2,40 +2,20 @@
 
 ## Infra Setup & Run Instructions
 
-1. Create .env in the `infrastructure/` directory:
+### ELK Stack (Fleet, Elasticsearch, Kibana, Logstash)
 
+1. Create `.env` in `infrastructure/elk/`: copy `infrastructure/elk/.env.example` to `infrastructure/elk/.env` and set `ELASTIC_PASSWORD`, `KIBANA_PASSWORD`, and `ENCRYPTION_KEY` (and adjust other values if needed).
+
+2. From project root, create volumes: `task infra:mkdir`
+
+3. Start the stack from `infrastructure/elk/`: `cd infrastructure/elk && docker compose up -d`
+
+4. **Fleet and Elastic Agent:** For step-by-step Kibana UI configuration (Fleet Server, agent policies, enrollment tokens) and enrolling a Docker agent with the Taskfile, see **[ELK Agent Setup — Fleet & Add Agent](infrastructure/elk/ELK_AGENT_SETUP.md)**.
+
+5. Enroll a host agent (after getting an enrollment token from Kibana Fleet): install [Task](https://taskfile.dev/docs/installation), then from project root run:
+   ```bash
+   task host-agent:enroll -- <ENROLLMENT_TOKEN>
    ```
-   # Password for the 'elastic' user (at least 6 characters)
-   ELASTIC_PASSWORD=something
-
-   # Password for the 'kibana_system' user (at least 6 characters)
-   KIBANA_PASSWORD=something
-
-   # Version of Elastic Stack to use
-   STACK_VERSION=8.12.0
-
-   # License to use (basic, trial, or platinum)
-   LICENSE=basic
-
-   # Ports to expose to the host
-   ES_PORT=9200
-   KIBANA_PORT=5601
-   LOGSTASH_PORT=5044
-   LOGSTASH_MONITORING_PORT=9600
-
-   ENCRYPTION_KEY=<random 32-character string for Kibana encryption>
-   ```
-
-2. Create volumes, from project root run: `mkdir -p volumes/certs volumes/esdata volumes/lsdata`
-3. Run `docker compose up` from the `infrastructure/` directory.
-4. Configure Fleet Server:
-   1. In the Kibana UI, go to Management > Fleet > Agent Policies
-   2. Create a new policy with the "Collect system logs and metrics" checkbox checked
-   3. Create a new agent with "Add Agent" in Management > Fleet > Agents
-   4. Copy the enrollment token
-5. Configure Elastic Agent:
-   1. Install [Task](https://taskfile.dev/docs/installation)
-   2. From the root of the project, run `task host-agent:enroll <enrollment-token>`
 
 ## FastAPI Backend Setup
 
