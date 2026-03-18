@@ -5,16 +5,20 @@ services:
       dockerfile: infrastructure/backend/Dockerfile
       network: host
     container_name: fastapi-backend
+    env_file:
+      - .env
     ports:
-      - "${PORT}:8000"
+      - "${PORT}:${PORT}"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     volumes:
-      - ../../app:/app
+      - ../../app:/app/app
+    command: sh -c "uv run uvicorn app.main:app --host ${HOST:-0.0.0.0} --port ${PORT:-8000}"
     restart: unless-stopped
 
   db:
-    image: postgres
+    image: postgres:15
     container_name: postgres-db
     restart: unless-stopped
     environment:
@@ -25,6 +29,11 @@ services:
       - "${POSTGRES_PORT}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:

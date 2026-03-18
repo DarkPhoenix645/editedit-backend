@@ -9,4 +9,4 @@ RUN uv sync --no-dev --frozen
 
 COPY ../../app ./app
 
-CMD ["sh", "-c", "uvicorn app.main:app --host $HOST --port $PORT"]
+CMD ["sh", "-c", "uv run uvicorn app.main:app --host ${HOST:-0.0.0.0} --port ${PORT:-8000}"]
