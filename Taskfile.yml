@@ -41,18 +41,90 @@ tasks:
           --user=root \
           --restart=always \
           --net={{.NETWORK}} \
-          -v {{.REPO_ROOT}}/{{.CERTS_PATH}}:/certs:ro \
+          -v {{.REPO_ROOT}}/{{.CERTS_PATH}}:/usr/share/elastic-agent/config/certs:ro \
           -v /var/log:/var/log:ro \
           -v /var/run/docker.sock:/var/run/docker.sock:ro \
           -e FLEET_ENROLL=1 \
           -e FLEET_URL=https://fleet:8220 \
           -e FLEET_ENROLLMENT_TOKEN={{.CLI_ARGS}} \
-          -e FLEET_CA=/certs/ca/ca.crt \
-          -e ELASTICSEARCH_CA=/certs/ca/ca.crt \
+          -e FLEET_CA=/usr/share/elastic-agent/config/certs/ca/ca.crt \
+          -e CERTIFICATE_AUTHORITIES=/usr/share/elastic-agent/config/certs/ca/ca.crt \
+          -e ELASTICSEARCH_CA=/usr/share/elastic-agent/config/certs/ca/ca.crt \
           docker.elastic.co/elastic-agent/elastic-agent:{{.STACK_VERSION}}
     preconditions:
       - sh: "test -d {{.CERTS_PATH}}/ca"
         msg: "ELK certs missing. Run infrastructure/elk setup first (docker compose up -d from infrastructure/elk)."
+
+  # ── Backend: production ──────────────────────────────────────────────────
+  backend:up:
+    desc: Start the FastAPI backend + Postgres (production mode, no reload)
+    summary: |
+      usage: task backend:up
+    dir: infrastructure/backend
+    cmds:
+      - docker compose up --build -d
+
+  backend:down:
+    desc: Stop the FastAPI backend + Postgres
+    summary: |
+      usage: task backend:down
+    dir: infrastructure/backend
+    cmds:
+      - docker compose down
+
+  backend:logs:
+    desc: Tail logs from the FastAPI backend container
+    summary: |
+      usage: task backend:logs
+    dir: infrastructure/backend
+    cmds:
+      - docker compose logs -f backend
+
+  backend:restart:
+    desc: Restart the backend container (prod)
+    summary: |
+      usage: task backend:restart
+    dir: infrastructure/backend
+    cmds:
+      - docker compose restart backend
+
+  # ── Backend: development (file-watching, --reload) ────────────────────
+  backend:dev:
+    desc: Start the FastAPI backend in dev mode (uvicorn --reload, watches app/)
+    summary: |
+      usage: task backend:dev
+      Merges docker-compose.dev.yml override on top of docker-compose.yml.
+      Any change to a file under app/ will trigger an automatic reload.
+    dir: infrastructure/backend
+    cmds:
+      - docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+  backend:dev:down:
+    desc: Stop the dev backend stack
+    summary: |
+      usage: task backend:dev:down
+    dir: infrastructure/backend
+    cmds:
+      - docker compose -f docker-compose.yml -f docker-compose.dev.yml down
+
+  # ── Alembic (run inside the backend container) ────────────────────────
+  backend:db:upgrade:
+    desc: Bootstrap DB schema via Alembic (idempotent — safe to run on any DB)
+    summary: |
+      usage: task backend:db:upgrade
+      Runs `alembic upgrade head` inside the running backend container.
+      On an empty DB this creates all tables; on an existing DB it's a no-op.
+    dir: infrastructure/backend
+    cmds:
+      - docker compose exec backend uv run alembic upgrade head
+
+  backend:db:current:
+    desc: Show the current Alembic revision applied to the DB
+    summary: |
+      usage: task backend:db:current
+    dir: infrastructure/backend
+    cmds:
+      - docker compose exec backend uv run alembic current
 
   host-agent:stop:
     desc: Stop and remove the host agent
