@@ -107,6 +107,26 @@ class SealedBlock(Base):
     storage_uri = Column(String, nullable=False)
 
     traces = relationship("HotColdTrace", back_populates="block")
+    cold_payload = relationship(
+        "ColdStoredBlock",
+        back_populates="block",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+class ColdStoredBlock(Base):
+    __tablename__ = "cold_stored_blocks"
+
+    block_id = Column(UUID(as_uuid=True), ForeignKey("sealed_blocks.id"), primary_key=True)
+    source_id = Column(UUID(as_uuid=True), ForeignKey("log_sources.id"), nullable=False, index=True)
+    events = Column(JSONB, nullable=False)
+    leaf_hashes = Column(JSONB, nullable=False)
+    merkle_root_hex = Column(String, nullable=False, index=True)
+    chain_hash_hex = Column(String, nullable=False, index=True)
+    timestamp_proof = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    block = relationship("SealedBlock", back_populates="cold_payload")
 
 class HotColdTrace(Base):
     __tablename__ = "hot_cold_trace"

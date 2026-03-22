@@ -126,6 +126,8 @@ services:
     image: docker.elastic.co/logstash/logstash:${STACK_VERSION}
     ports:
       - 5044:5044
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - certs:/usr/share/logstash/config/certs:ro
       - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
@@ -134,6 +136,7 @@ services:
       - lsdata:/usr/share/logstash/data
     environment:
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - COLD_BACKEND_URL=${COLD_BACKEND_URL:-http://host.docker.internal:8000/api/cold-ingest}
 
   fleet:
     depends_on:
