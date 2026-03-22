@@ -42,8 +42,9 @@ tasks:
           --restart=always \
           --net={{.NETWORK}} \
           -v {{.REPO_ROOT}}/{{.CERTS_PATH}}:/usr/share/elastic-agent/config/certs:ro \
-          -v /var/log:/var/log:ro \
-          -v /var/run/docker.sock:/var/run/docker.sock:ro \
+          -v /var/log/journal:/var/log/journal:ro \
+          -v /run/log/journal:/run/log/journal:ro \
+          -v /etc/machine-id:/etc/machine-id:ro \
           -e FLEET_ENROLL=1 \
           -e FLEET_URL=https://fleet:8220 \
           -e FLEET_ENROLLMENT_TOKEN={{.CLI_ARGS}} \
