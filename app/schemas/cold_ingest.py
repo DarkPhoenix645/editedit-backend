@@ -8,5 +8,5 @@ class ColdIngestResponse(BaseModel):
     source_id: UUID
     block_id: UUID
     sequence_number: int
-    stored_events: int
+    sealed_event_count: int
     authoritative_time: datetime

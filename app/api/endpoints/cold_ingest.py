@@ -52,6 +52,6 @@ async def cold_ingest(request: Request, db: Session = Depends(get_db)):
         source_id=block.source_id,
         block_id=block.id,
         sequence_number=block.sequence_number,
-        stored_events=block.log_count,
+        sealed_event_count=block.log_count,
         authoritative_time=block.authoritative_time,
     )
