@@ -1,4 +1,5 @@
 from sqlalchemy import (
+    Boolean,
     Column,
     String,
     Float,
@@ -10,6 +11,7 @@ from sqlalchemy import (
     Text,
     Index,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from sqlalchemy.orm import relationship
@@ -119,7 +121,15 @@ class ColdStoredBlock(Base):
 
     block_id = Column(UUID(as_uuid=True), ForeignKey("sealed_blocks.id"), primary_key=True)
     source_id = Column(UUID(as_uuid=True), ForeignKey("log_sources.id"), nullable=False, index=True)
-    events = Column(JSONB, nullable=False)
+    object_bucket = Column(String, nullable=False)
+    object_key = Column(String, nullable=False, index=True)
+    object_version_id = Column(String, nullable=True)
+    object_etag = Column(String, nullable=False)
+    object_sha256_hex = Column(String, nullable=False, index=True)
+    object_size_bytes = Column(BigInteger, nullable=False)
+    object_retention_mode = Column(String, nullable=False)
+    object_retention_until = Column(DateTime(timezone=True), nullable=False)
+    object_legal_hold = Column(Boolean, nullable=False, server_default=text("false"))
     leaf_hashes = Column(JSONB, nullable=False)
     merkle_root_hex = Column(String, nullable=False, index=True)
     chain_hash_hex = Column(String, nullable=False, index=True)

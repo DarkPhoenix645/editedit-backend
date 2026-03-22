@@ -10,8 +10,10 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from app.core.canonical_json import canonical_json_bytes
 from app.core.config import settings
 from app.db.models import ColdStoredBlock, HotColdTrace, LogSource, SealedBlock
+from app.services.cold_object_store import store_cold_block_payload
 
 
 _PRIVATE_KEY = None
@@ -47,14 +49,6 @@ def _first_present(payload: dict[str, Any], *paths: str, default: Any = None) ->
         if value not in (None, "", []):
             return value
     return default
-
-def _canonical_json_bytes(payload: dict[str, Any]) -> bytes:
-    return json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    ).encode("utf-8")
 
 def _sha256_bytes(value: bytes) -> bytes:
     return hashlib.sha256(value).digest()
@@ -349,13 +343,13 @@ def _derive_event_id(event: dict[str, Any]) -> str:
     explicit_id = _first_present(event, "event.id", "metadata._id", default=None)
     if explicit_id:
         return str(explicit_id)
-    return _sha256_hex(_canonical_json_bytes(event))
+    return _sha256_hex(canonical_json_bytes(event))
 
 def process_cold_events(db: Session, events: list[dict[str, Any]]) -> SealedBlock:
     if not events:
         raise ValueError("cold event batch is empty")
 
-    canonical_events = [_canonical_json_bytes(event) for event in events]
+    canonical_events = [canonical_json_bytes(event) for event in events]
     leaf_hashes = [_sha256_bytes(event_bytes) for event_bytes in canonical_events]
     payload_hash = _merkle_root(leaf_hashes)
 
@@ -436,13 +430,45 @@ def process_cold_events(db: Session, events: list[dict[str, Any]]) -> SealedBloc
     )
     db.add(block)
     db.flush()
-    block.storage_uri = f"{settings.COLDSTACK_STORAGE_URI_PREFIX.rstrip('/')}/{block.id}"
+
+    leaf_hashes_hex = [leaf_hash.hex() for leaf_hash in leaf_hashes]
+    object_reference = store_cold_block_payload(
+        block_id=str(block.id),
+        source_id=str(source.id),
+        sequence_number=sequence_number,
+        payload={
+            "schema_version": 1,
+            "block_id": str(block.id),
+            "source_id": str(source.id),
+            "sequence_number": sequence_number,
+            "window_start": window_start.isoformat(),
+            "window_end": window_end.isoformat(),
+            "authoritative_time": authoritative_time.isoformat(),
+            "log_count": len(events),
+            "payload_hash_hex": payload_hash.hex(),
+            "chain_hash_hex": chain_hash.hex(),
+            "signing_key_id": settings.COLDSTACK_SIGNING_KEY_ID,
+            "rsa_signature_b64": base64.b64encode(rsa_signature).decode("ascii"),
+            "leaf_hashes": leaf_hashes_hex,
+            "timestamp_proof": timestamp_proof,
+            "events": events,
+        },
+    )
+    block.storage_uri = object_reference.storage_uri
 
     stored_block = ColdStoredBlock(
         block_id=block.id,
         source_id=source.id,
-        events=events,
-        leaf_hashes=[leaf_hash.hex() for leaf_hash in leaf_hashes],
+        object_bucket=object_reference.bucket,
+        object_key=object_reference.object_key,
+        object_version_id=object_reference.version_id,
+        object_etag=object_reference.etag,
+        object_sha256_hex=object_reference.sha256_hex,
+        object_size_bytes=object_reference.size_bytes,
+        object_retention_mode=object_reference.retention_mode,
+        object_retention_until=object_reference.retention_until,
+        object_legal_hold=object_reference.legal_hold,
+        leaf_hashes=leaf_hashes_hex,
         merkle_root_hex=payload_hash.hex(),
         chain_hash_hex=chain_hash.hex(),
         timestamp_proof=timestamp_proof,
