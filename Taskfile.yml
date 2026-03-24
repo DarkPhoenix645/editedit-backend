@@ -1,12 +1,17 @@
 version: "3"
 
 vars:
-  # STACK_VERSION and NETWORK should match as defined in infrastructure/elk/.env and infrastructure/elk/docker-compose.yml
+  # STACK_VERSION and NETWORK should match as defined in infrastructure/elk/.env
+  # and infrastructure/elk/docker-compose.yml
   STACK_VERSION: 9.3.1
   NETWORK: elk_default
   CERTS_PATH: infrastructure/elk/volumes/certs
   REPO_ROOT:
     sh: pwd
+  ELASTIC_PASSWORD:
+    sh: bash -lc 'set -a; source infrastructure/elk/.env; set +a; echo "$ELASTIC_PASSWORD"'
+  OCSF_HOT_RETENTION_DAYS:
+    sh: bash -lc 'set -a; source infrastructure/elk/.env; set +a; echo "${OCSF_HOT_RETENTION_DAYS:-7}"'
 
 tasks:
   infra:mkdir:
@@ -27,7 +32,7 @@ tasks:
       - rm -rf infrastructure/elk/volumes/esdata/*
       - rm -rf infrastructure/elk/volumes/lsdata/*
 
-  # Enroll a Docker agent to ELK Fleet (infrastructure/elk). Get token from Kibana: Fleet → Add agent.
+  # Enroll a Docker agent to ELK Fleet (infrastructure/elk).
   host-agent:enroll:
     desc: Enroll Elastic Agent (Docker) to ELK stack Fleet for log collection
     summary: |
@@ -56,7 +61,6 @@ tasks:
       - sh: "test -d {{.CERTS_PATH}}/ca"
         msg: "ELK certs missing. Run infrastructure/elk setup first (docker compose up -d from infrastructure/elk)."
 
-  # ── Backend: production ──────────────────────────────────────────────────
   backend:up:
     desc: Start the FastAPI backend + Postgres (production mode, no reload)
     summary: |
@@ -89,7 +93,6 @@ tasks:
     cmds:
       - docker compose restart backend
 
-  # ── Backend: development (file-watching, --reload) ────────────────────
   backend:dev:
     desc: Start the FastAPI backend in dev mode (uvicorn --reload, watches app/)
     summary: |
@@ -108,7 +111,6 @@ tasks:
     cmds:
       - docker compose -f docker-compose.yml -f docker-compose.dev.yml down
 
-  # ── Alembic (run inside the backend container) ────────────────────────
   backend:db:upgrade:
     desc: Bootstrap DB schema via Alembic (idempotent — safe to run on any DB)
     summary: |
@@ -130,9 +132,55 @@ tasks:
   host-agent:stop:
     desc: Stop and remove the host agent
     cmds:
-      - docker rm -f elastic-agent-host
+      - docker stop elastic-agent-host && docker rm elastic-agent-host
 
   host-agent:logs:
     desc: Tail the agent logs
     cmds:
       - docker logs -f elastic-agent-host
+
+  elk:ilm:bootstrap:
+    desc: Create/update OCSF ILM policy and index template
+    summary: |
+      usage: task elk:ilm:bootstrap
+      Requires ELK stack running and infrastructure/elk/.env configured.
+    dir: infrastructure/elk
+    cmds:
+      - |
+        curl -sS --fail --cacert volumes/certs/ca/ca.crt \
+          -u "elastic:{{.ELASTIC_PASSWORD}}" \
+          -H 'Content-Type: application/json' \
+          -X PUT "https://localhost:9200/_ilm/policy/ocsf-logs-7d" \
+          -d "$(sed "s/\${OCSF_HOT_RETENTION_DAYS}/{{.OCSF_HOT_RETENTION_DAYS}}/g" elasticsearch/ilm/ocsf-logs-7d.json)"
+      - |
+        curl -sS --fail --cacert volumes/certs/ca/ca.crt \
+          -u "elastic:{{.ELASTIC_PASSWORD}}" \
+          -H 'Content-Type: application/json' \
+          -X PUT "https://localhost:9200/_index_template/ocsf-logs-template" \
+          -d @elasticsearch/templates/ocsf-logs-template.json
+      - |
+        curl -sS --fail --cacert volumes/certs/ca/ca.crt \
+          -u "elastic:{{.ELASTIC_PASSWORD}}" \
+          "https://localhost:9200/_ilm/policy/ocsf-logs-7d"
+
+  elk:smoke:
+    desc: Run hot/cold path smoke validation commands
+    summary: |
+      usage: task elk:smoke
+      Publishes one log and checks ES hot path + backend cold ingest.
+    dir: infrastructure/elk
+    cmds:
+      - logger -t forensiq-smoke '{"dataset":"system.auth","message":"forensiq smoke test","host.name":"smoke-host"}'
+      - sleep 7
+      - curl -s --cacert volumes/certs/ca/ca.crt -u "elastic:{{.ELASTIC_PASSWORD}}" "https://localhost:9200/ocsf-logs-*/_search?q=forensiq-smoke&sort=@timestamp:desc&size=5"
+      - docker logs fastapi-backend --since 2m | rg "/api/cold/ingest|sealed|block_id|Invalid secret"
+
+  minio:up:
+    desc: Start local MinIO WORM services
+    cmds:
+      - docker compose -f infrastructure/docker-compose.minio.yml up -d
+
+  minio:down:
+    desc: Stop local MinIO WORM services
+    cmds:
+      - docker compose -f infrastructure/docker-compose.minio.yml down

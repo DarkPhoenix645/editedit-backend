@@ -14,8 +14,17 @@ services:
         condition: service_healthy
     volumes:
       - ../../app:/app/app
-    command: sh -c "uv run uvicorn app.main:app --host ${HOST:-0.0.0.0} --port ${PORT:-8000}"
+      - ../../alembic.ini:/app/alembic.ini
+      - ../../migrations:/app/migrations
+      - ../elk/volumes/certs:/app/certs:ro
+    command: sh -c "uv run uvicorn app.main:app --host ${HOST:-0.0.0.0} --port ${PORT:-8000} --ssl-certfile /app/certs/backend/backend.crt --ssl-keyfile /app/certs/backend/backend.key"
     restart: unless-stopped
+    networks:
+      default:
+      elk_default:
+        aliases:
+          - backend
+      forensiq_shared:
 
   db:
     image: postgres:15
@@ -34,6 +43,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - default
 
 volumes:
   postgres_data:
+
+networks:
+  elk_default:
+    external: true
+  forensiq_shared:
+    external: true

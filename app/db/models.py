@@ -99,20 +99,26 @@ class SealedBlock(Base):
     window_end = Column(DateTime(timezone=True), nullable=False)
     log_count = Column(Integer, nullable=False)
     payload_hash = Column(LargeBinary, nullable=False)
+    merkle_root = Column(LargeBinary, nullable=False)
     chain_hash = Column(LargeBinary, nullable=False)
     tsa_token = Column(LargeBinary, nullable=False)
     authoritative_time = Column(DateTime(timezone=True), nullable=False)
     rsa_signature = Column(LargeBinary, nullable=False)
     signing_key_id = Column(String, nullable=False)
     storage_uri = Column(String, nullable=False)
+    logstash_config_version = Column(String, nullable=False, server_default="v2.1.0")
 
     traces = relationship("HotColdTrace", back_populates="block")
 
 class HotColdTrace(Base):
-    __tablename__ = "hot_cold_trace"
+    __tablename__ = "hot_cold_traces"
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    elastic_event_id = Column(String, unique=True, index=True, nullable=False)
+    event_fingerprint = Column(String, unique=True, index=True, nullable=False)
+    elastic_event_id = Column(String, unique=True, index=True, nullable=True)
+    cold_offset = Column(Integer, nullable=False)
+    storage_uri = Column(String, nullable=False)
     block_id = Column(UUID(as_uuid=True), ForeignKey("sealed_blocks.id"), index=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     block = relationship("SealedBlock", back_populates="traces")
 

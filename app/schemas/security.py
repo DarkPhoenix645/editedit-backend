@@ -11,16 +11,21 @@ class SealedBlock(BaseModel):
     window_end: datetime
     log_count: int
     payload_hash: bytes
+    merkle_root: bytes
     chain_hash: bytes
-    tsa_token: Optional[bytes] = None
+    tsa_token: bytes
     authoritative_time: datetime
     rsa_signature: bytes
     signing_key_id: str
     storage_uri: str
+    logstash_config_version: str
     model_config = ConfigDict(from_attributes=True)
 
 class HotColdTrace(BaseModel):
     id: int
-    elastic_event_id: str
+    event_fingerprint: str
+    elastic_event_id: Optional[str] = None
+    cold_offset: int
+    storage_uri: str
     block_id: UUID
     model_config = ConfigDict(from_attributes=True)

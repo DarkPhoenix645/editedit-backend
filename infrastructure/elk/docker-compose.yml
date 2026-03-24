@@ -17,7 +17,7 @@ services:
           rm -f /tmp/ca.zip;
         fi;
         if [ ! -f config/certs/es01/es01.crt ]; then
-          echo -e "instances:\\n  - name: es01\\n    dns: [es01, localhost]\\n  - name: kib01\\n    dns: [kib01, localhost]\\n  - name: fleet\\n    dns: [fleet, localhost]\\n  - name: logstash\\n    dns: [logstash, localhost]\\n" > config/certs/instances.yml;
+          echo -e "instances:\\n  - name: es01\\n    dns: [es01, localhost]\\n  - name: kib01\\n    dns: [kib01, localhost]\\n  - name: fleet\\n    dns: [fleet, localhost]\\n  - name: logstash\\n    dns: [logstash, localhost]\\n  - name: backend\\n    dns: [backend, localhost]\\n" > config/certs/instances.yml;
           printf "\\n" | bin/elasticsearch-certutil cert --silent --pem --out /tmp/certs.zip --in config/certs/instances.yml --ca-cert config/certs/ca/ca.crt --ca-key config/certs/ca/ca.key;
           (cd config/certs && "$$JAR" xf /tmp/certs.zip);
           rm -f /tmp/certs.zip config/certs/instances.yml;
@@ -134,6 +134,7 @@ services:
       - lsdata:/usr/share/logstash/data
     environment:
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - LOGSTASH_SHARED_SECRET=${LOGSTASH_SHARED_SECRET}
 
   fleet:
     depends_on:

@@ -1,0 +1,15 @@
+{
+  "policy": {
+    "phases": {
+      "hot": {
+        "actions": {}
+      },
+      "delete": {
+        "min_age": "${OCSF_HOT_RETENTION_DAYS}d",
+        "actions": {
+          "delete": {}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "index_patterns": [
+    "ocsf-logs-*"
+  ],
+  "template": {
+    "settings": {
+      "index.lifecycle.name": "ocsf-logs-7d",
+      "index.number_of_shards": 1,
+      "index.number_of_replicas": 0
+    },
+    "mappings": {
+      "dynamic": true,
+      "properties": {
+        "@timestamp": {
+          "type": "date"
+        },
+        "forensiq": {
+          "properties": {
+            "event_fingerprint": {
+              "type": "keyword"
+            },
+            "trust_tier": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    }
+  },
+  "priority": 500
+}
