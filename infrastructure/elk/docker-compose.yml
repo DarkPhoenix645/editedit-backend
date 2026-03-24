@@ -141,6 +141,8 @@ services:
       kib01: { condition: service_healthy }
     image: docker.elastic.co/elastic-agent/elastic-agent:${STACK_VERSION}
     user: root
+    ports:
+      - ${FLEET_PORT}:8220
     volumes:
       - certs:/usr/share/elastic-agent/config/certs
       - /var/run/docker.sock:/var/run/docker.sock:ro

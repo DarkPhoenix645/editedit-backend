@@ -61,6 +61,32 @@
    docker compose up --build
    ```
 
+## MacOS Note Regarding Setup
+1. MacOS log collection is problematic, therefore we use synthetic logs for dev purposes.
+
+2. Follow the same steps as usual and then utilise the `task host-agent:synthetic:inject` to inject logs in the container, the logs are stored at `/var/log/dev/synthetic.log`, this needs to be added to the Agent Policy under the System Integration
+
+3. This can then be queried with the following in the Kibana Dev Tools
+   ```json
+   GET logs-*/_search
+   {
+   "size": 20,
+   "sort": [{ "@timestamp": "desc" }],
+   "query": {
+      "bool": {
+         "should": [
+         { "match_phrase": { "message": "synthetic event" } },
+         { "match_phrase": { "message": "dev.synthetic" } },
+         { "match_phrase": { "host.name": "macos-dev" } }
+         ],
+         "minimum_should_match": 1
+      }
+   }
+   }
+   ```
+
+4. The logs should be saved under the dataset `event.dataset: system.syslog` 
+
 ## ForensIQ v2.1 Hot/Cold Setup
 
 1. Bootstrap ILM for hot OCSF indices
