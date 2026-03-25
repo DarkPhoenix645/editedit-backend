@@ -1,6 +1,7 @@
 services:
   # Setup: generate certs only, then exit (no wait for ES)
   setup:
+    profiles: ["certs"]
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
       - certs:/usr/share/elasticsearch/config/certs
@@ -55,8 +56,6 @@ services:
     restart: "no"
 
   es01:
-    depends_on:
-      setup: { condition: service_completed_successfully }
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
       - certs:/usr/share/elasticsearch/config/certs

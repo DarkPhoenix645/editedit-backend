@@ -42,29 +42,6 @@ xpack.fleet.agentPolicies:
         package:
           name: fleet_server
 
-# --- Fleet Outputs ---
-xpack.fleet.outputs:
-  # Default output for all agents and Fleet Server: send directly to Elasticsearch
-  - id: es-direct
-    name: Elasticsearch Direct
-    type: elasticsearch
-    hosts: ["https://es01:9200"]
-    is_default: true
-    is_default_monitoring: true
-    config:
-      ssl.verification_mode: certificate
-      ssl.certificate_authorities: ["/usr/share/elastic-agent/config/certs/ca/ca.crt"]
-
-  # Optional Logstash output for custom ingest pipelines (not default)
-  - id: logstash-ingest
-    name: Logstash Ingest Pipeline
-    type: logstash
-    hosts: ["logstash:5044"]
-    config:
-      # We disable SSL verification here if Logstash is using
-      # self-signed certs or if the agent is internal to the Docker net
-      ssl.verification_mode: none
-
 # --- Security & Reporting ---
 # Encryption keys: set via env (XPACK_*_ENCRYPTIONKEY / XPACK_ACTIONS_ENCRYPTION_KEY).
 xpack.reporting.roles.enabled: false

@@ -1,8 +1,16 @@
 version: "3"
 
+# Cross-platform env loading (no bash `source`). Later files override earlier keys.
+# Copy infrastructure/elk/.env.example → infrastructure/elk/.env; optional local overrides:
+# infrastructure/elk/.env.local (gitignored).
+dotenv:
+  - infrastructure/elk/.env
+  - infrastructure/elk/.env.local
+  - infrastructure/backend/.env
+  - infrastructure/backend/.env.local
+
 vars:
-  # STACK_VERSION and NETWORK should match as defined in infrastructure/elk/.env
-  # and infrastructure/elk/docker-compose.yml
+  # STACK_VERSION / NETWORK override elk .env when both define the same key (Taskfile vars win).
   STACK_VERSION: 9.3.1
   NETWORK: elk_default
   CERTS_PATH: infrastructure/elk/volumes/certs
@@ -11,10 +19,11 @@ vars:
   DEV_LOGS_PATH: infrastructure/elk/devlogs
   DEV_LOGS_CONTAINER_PATH: /var/log/dev
   DEV_LOGS_FILE: /var/log/dev/synthetic.log
-  ELASTIC_PASSWORD:
-    sh: bash -lc 'set -a; source infrastructure/elk/.env; set +a; echo "$ELASTIC_PASSWORD"'
+  # Defaults if missing from dotenv (see infrastructure/elk/.env.example)
+  KIBANA_PORT:
+    sh: echo "${KIBANA_PORT:-5601}"
   OCSF_HOT_RETENTION_DAYS:
-    sh: bash -lc 'set -a; source infrastructure/elk/.env; set +a; echo "${OCSF_HOT_RETENTION_DAYS:-7}"'
+    sh: echo "${OCSF_HOT_RETENTION_DAYS:-7}"
   SYNTH_LOG_COUNT: 5000
   SYNTH_LOG_SLEEP_SEC: 0.01
 
@@ -36,6 +45,43 @@ tasks:
       - rm -rf infrastructure/elk/volumes/certs/*
       - rm -rf infrastructure/elk/volumes/esdata/*
       - rm -rf infrastructure/elk/volumes/lsdata/*
+
+  infra:certs:generate:
+    desc: Generate Elasticsearch/TLS certs (one-shot)
+    summary: |
+      Stops the ELK stack first so the `certs` volume is not in use, then runs the setup container.
+      Generates the PKI under `infrastructure/elk/volumes/certs` using the same logic as the former `setup` container.
+      Uses the `certs` compose profile (so it does not run on normal `infra:up`).
+    dir: infrastructure/elk
+    cmds:
+      - docker compose -f docker-compose.yml -f docker-compose-dns-override.yml down
+      - docker compose --profile certs up --abort-on-container-exit setup
+
+  infra:up:
+    desc: Start ELK stack (stable certs; applies DNS override)
+    summary: |
+      usage: task infra:up -- <docker-compose-up-options>
+      Examples:
+      - task infra:up -- --force-recreate fleet
+      - task infra:up -- --pull always
+    dir: infrastructure/elk
+    cmds:
+      - docker network inspect forensiq_shared >/dev/null 2>&1 || docker network create forensiq_shared
+      - |
+        if [ ! -f volumes/certs/ca/ca.crt ]; then
+          echo "ELK certs missing -> run: task infra:certs:generate";
+          exit 1;
+        fi
+      - docker compose -f docker-compose.yml -f docker-compose-dns-override.yml up -d {{.CLI_ARGS}}
+
+  infra:down:
+    desc: Stop backend compose and remove shared Docker network (if present)
+    summary: |
+      usage: task infra:down
+    dir: infrastructure/backend
+    cmds:
+      - docker compose down
+      - docker network rm forensiq_shared 2>/dev/null || true
 
   # Enroll a Docker agent to ELK Fleet (infrastructure/elk).
   host-agent:enroll:
@@ -66,7 +112,7 @@ tasks:
           docker.elastic.co/elastic-agent/elastic-agent:{{.STACK_VERSION}}
     preconditions:
       - sh: "test -d {{.CERTS_PATH}}/ca"
-        msg: "ELK certs missing. Run infrastructure/elk setup first (docker compose up -d from infrastructure/elk)."
+        msg: "ELK certs missing. Run `task infra:certs:generate` first."
 
   host-agent:synthetic:inject:
     desc: Inject high-volume synthetic logs into elastic-agent-host for dev load testing
@@ -170,6 +216,22 @@ tasks:
     cmds:
       - docker logs -f elastic-agent-host
 
+  elk:fleet:bootstrap:
+    desc: Create/update Fleet Elasticsearch + Logstash outputs (server-auth TLS)
+    summary: |
+      usage: task elk:fleet:bootstrap
+      Requires ELK stack running, infrastructure/elk/.env, and jq on PATH.
+      Sets Logstash TLS to verify server cert with CA only (no mTLS).
+      Override Kibana URL: task elk:fleet:bootstrap KIBANA_URL=https://other:5601
+    dir: infrastructure/elk
+    preconditions:
+      - sh: "test -f volumes/certs/ca/ca.crt"
+        msg: "ELK certs missing. Run `task infra:certs:generate` first."
+      - sh: "command -v jq >/dev/null"
+        msg: "jq is required (e.g. pacman -S jq / apt install jq)."
+    cmds:
+      - bash scripts/fleet-bootstrap.sh
+
   elk:ilm:bootstrap:
     desc: Create/update OCSF ILM policy and index template
     summary: |
@@ -209,9 +271,9 @@ tasks:
   minio:up:
     desc: Start local MinIO WORM services
     cmds:
-      - docker compose -f infrastructure/docker-compose.minio.yml up -d
+      - docker compose -f infrastructure/backend/docker-compose.minio.yml up -d
 
   minio:down:
     desc: Stop local MinIO WORM services
     cmds:
-      - docker compose -f infrastructure/docker-compose.minio.yml down
+      - docker compose -f infrastructure/backend/docker-compose.minio.yml down

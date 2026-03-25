@@ -11,15 +11,29 @@
 
 2. From project root, create volumes: `task infra:mkdir`
 
-3. Start the stack from `infrastructure/elk/`:
-   `cd infrastructure/elk && docker compose up -d`
+3. Generate TLS certs (one-time, if missing): `task infra:certs:generate`
 
-4. **Fleet and Elastic Agent:** For step-by-step Kibana UI configuration (Fleet
+4. Start the stack: `task infra:up`
+
+5. **Fleet outputs (git-stable, UI-editable):** After Kibana is up, create the
+   default Elasticsearch output and the Logstash ingest output with **server-auth
+   TLS only** (agents verify Logstash’s server cert using the stack CA; no mTLS):
+
+   ```bash
+   task elk:fleet:bootstrap
+   ```
+
+   Uses `elastic` + `ELASTIC_PASSWORD` from `infrastructure/elk/.env`, talks to
+   `https://localhost:${KIBANA_PORT:-5601}`, and sets `ssl.verification_mode` to
+   `certificate` for Elasticsearch and `full` for Logstash (SAN includes `logstash`
+   in the generated PKI). Override `KIBANA_URL` if Kibana is not on localhost.
+
+6. **Fleet and Elastic Agent:** For step-by-step Kibana UI configuration (Fleet
    Server, agent policies, enrollment tokens) and enrolling a Docker agent with
    the Taskfile, see
    **[ELK Agent Setup — Fleet & Add Agent](infrastructure/elk/ELK_AGENT_SETUP.md)**.
 
-5. Enroll a host agent (after getting an enrollment token from Kibana Fleet):
+7. Enroll a host agent (after getting an enrollment token from Kibana Fleet):
    install [Task](https://taskfile.dev/docs/installation), then from project
    root run:
    ```bash
@@ -104,7 +118,7 @@
 2. Start MinIO (local WORM)
 
    ```bash
-   docker compose -f infrastructure/docker-compose.minio.yml up -d
+   docker compose -f infrastructure/backend/docker-compose.minio.yml up -d
    ```
 
    Console: [http://localhost:9001](http://localhost:9001) (`minioadmin` /
