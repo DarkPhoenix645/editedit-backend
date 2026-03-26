@@ -20,6 +20,24 @@ import uuid
 
 from app.db.base import Base
 
+class Organization(Base):
+    __tablename__ = "organizations"
+    __table_args__ = (UniqueConstraint("slug", name="uq_organizations_slug"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=False, index=True)
+    slug = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    is_active = Column(Boolean, nullable=False, server_default=text("true"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 class HealthCheck(Base):
     __tablename__ = "health_check"
 

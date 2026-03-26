@@ -13,7 +13,6 @@ from minio.retention import Retention
 from app.core.canonical_json import canonical_json_bytes
 from app.core.config import settings
 
-
 @dataclass(frozen=True)
 class ColdObjectReference:
     bucket: str
@@ -27,33 +26,29 @@ class ColdObjectReference:
     legal_hold: bool
     storage_uri: str
 
-
 _BUCKET_READY = False
-
 
 @lru_cache(maxsize=1)
 def _client() -> Minio:
     return Minio(
-        endpoint=settings.COLDSTACK_MINIO_ENDPOINT,
-        access_key=settings.COLDSTACK_MINIO_ACCESS_KEY,
-        secret_key=settings.COLDSTACK_MINIO_SECRET_KEY,
-        secure=settings.COLDSTACK_MINIO_SECURE,
+        endpoint=settings.MINIO_ENDPOINT,
+        access_key=settings.MINIO_ACCESS_KEY,
+        secret_key=settings.MINIO_SECRET_KEY,
+        secure=settings.MINIO_SECURE,
     )
 
-
 def _retention_mode() -> str:
-    mode = settings.COLDSTACK_MINIO_RETENTION_MODE.strip().upper()
+    mode = settings.MINIO_RETENTION_MODE.strip().upper()
     if mode not in {GOVERNANCE, COMPLIANCE}:
         raise ValueError(
-            "COLDSTACK_MINIO_RETENTION_MODE must be GOVERNANCE or COMPLIANCE"
+            "MINIO_RETENTION_MODE must be GOVERNANCE or COMPLIANCE"
         )
     return mode
-
 
 def _retention_until() -> tuple[datetime, datetime]:
     retention_until = (
         datetime.now(timezone.utc).replace(microsecond=0)
-        + timedelta(days=settings.COLDSTACK_MINIO_RETENTION_DAYS)
+        + timedelta(days=settings.MINIO_RETENTION_DAYS)
     )
     # MinIO examples use naive UTC datetimes for retention headers.
     minio_retention_until = retention_until.astimezone(timezone.utc).replace(
@@ -61,33 +56,30 @@ def _retention_until() -> tuple[datetime, datetime]:
     )
     return retention_until, minio_retention_until
 
-
 def _storage_uri(bucket: str, object_key: str, version_id: str | None) -> str:
     base_uri = f"s3://{bucket}/{object_key}"
     if not version_id:
         return base_uri
     return f"{base_uri}?versionId={version_id}"
 
-
 def _object_key(source_id: str, sequence_number: int, block_id: str) -> str:
-    prefix = settings.COLDSTACK_MINIO_PREFIX.strip("/")
+    prefix = settings.MINIO_PREFIX.strip("/")
     object_name = f"{source_id}/{sequence_number:020d}-{block_id}.json"
     if not prefix:
         return object_name
     return f"{prefix}/{object_name}"
-
 
 def _ensure_bucket() -> None:
     global _BUCKET_READY
     if _BUCKET_READY:
         return
 
-    if not settings.COLDSTACK_MINIO_AUTO_CREATE_BUCKET:
+    if not settings.MINIO_AUTO_CREATE_BUCKET:
         _BUCKET_READY = True
         return
 
     client = _client()
-    bucket_name = settings.COLDSTACK_MINIO_BUCKET
+    bucket_name = settings.MINIO_BUCKET
     if client.bucket_exists(bucket_name):
         _BUCKET_READY = True
         return
@@ -98,7 +90,6 @@ def _ensure_bucket() -> None:
         if exc.code not in {"BucketAlreadyOwnedByYou", "BucketAlreadyExists"}:
             raise
     _BUCKET_READY = True
-
 
 def store_cold_block_payload(
     *,
@@ -118,7 +109,7 @@ def store_cold_block_payload(
     tags["block_id"] = block_id
     tags["source_id"] = source_id
 
-    bucket_name = settings.COLDSTACK_MINIO_BUCKET
+    bucket_name = settings.MINIO_BUCKET
     object_key = _object_key(source_id, sequence_number, block_id)
     result = _client().put_object(
         bucket_name=bucket_name,

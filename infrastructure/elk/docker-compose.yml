@@ -70,7 +70,7 @@ services:
       - node.name=es01
       - cluster.initial_master_nodes=es01
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
-      - bootstrap.memory_lock=true
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m -XX:+UseG1GC
       - xpack.security.enabled=true
       - xpack.security.http.ssl.enabled=true
       - xpack.security.http.ssl.key=certs/es01/es01.key
@@ -82,8 +82,11 @@ services:
       - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
       - xpack.security.transport.ssl.verification_mode=certificate
       - xpack.license.self_generated.type=${LICENSE}
-    ulimits:
-      memlock: { soft: -1, hard: -1 }
+    # Optional: raise if you still see 137 after increasing Docker Desktop memory (Settings → Resources).
+    deploy:
+      resources:
+        limits:
+          memory: ${ES_DOCKER_MEM_LIMIT:-2g}
     healthcheck:
       test: ["CMD-SHELL", "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'"]
       interval: 10s
