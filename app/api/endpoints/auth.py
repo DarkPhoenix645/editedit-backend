@@ -7,7 +7,15 @@ from uuid import UUID
 
 from app.db.session import get_db
 from app.db.models import User
-from app.schemas.auth import RefreshRequest, RegisterRequest, TokenResponse
+from app.schemas.auth import (
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    RefreshRequest,
+    RegisterRequest,
+    ResetPasswordConfirmRequest,
+    ResetPasswordConfirmResponse,
+    TokenResponse,
+)
 from app.core.rbac import UserRole
 from app.core.config import settings
 from app.core.security import (
@@ -17,7 +25,7 @@ from app.core.security import (
     create_refresh_token,
 )
 from app.services.audit_service import record_access_audit
-from app.services import refresh_token_service
+from app.services import notification_service, password_reset_service, refresh_token_service, user_service
 
 router = APIRouter()
 
@@ -173,3 +181,61 @@ def refresh(
         "refresh_token": new_refresh_token,
         "token_type": "bearer",
     }
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse, status_code=202)
+def forgot_password(
+    request: Request,
+    payload: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    user = user_service.get_user_by_email(db, payload.email)
+    if user and user.is_active:
+        token = password_reset_service.issue_password_reset_token(db, user=user)
+        notification_service.send_password_reset_email(email=user.email, token=token)
+        record_access_audit(
+            db,
+            actor=user,
+            action="auth.password_reset.request",
+            resource_type="password_reset_token",
+            request=request,
+        )
+    else:
+        record_access_audit(
+            db,
+            actor=None,
+            action="auth.password_reset.request",
+            resource_type="password_reset_token",
+            request=request,
+        )
+    return ForgotPasswordResponse()
+
+@router.post("/reset-password", response_model=ResetPasswordConfirmResponse)
+def reset_password(
+    request: Request,
+    payload: ResetPasswordConfirmRequest,
+    db: Session = Depends(get_db),
+):
+    user = password_reset_service.reset_password_with_token(
+        db,
+        raw_token=payload.token,
+        new_password_hash=get_password_hash(payload.new_password),
+    )
+    if user is None:
+        record_access_audit(
+            db,
+            actor=None,
+            action="auth.password_reset.confirm.denied",
+            resource_type="password_reset_token",
+            request=request,
+        )
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+    refresh_token_service.revoke_user_refresh_tokens(db, user_id=user.id)
+    record_access_audit(
+        db,
+        actor=user,
+        action="auth.password_reset.confirm",
+        resource_type="user_credentials",
+        request=request,
+    )
+    return ResetPasswordConfirmResponse()
