@@ -8,3 +8,4 @@ __pycache__/
 .cursorignore
 .cursor
 elastic-agent-*
+devlogs/
