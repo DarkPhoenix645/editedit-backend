@@ -1,0 +1,880 @@
+{
+  "info": {
+    "_postman_id": "forensiq-backend-v1",
+    "name": "ForensIQ Backend",
+    "description": "All `/api/*` routes. Use **LOCAL** or **PROD** Postman environment (`HOST_URL`). Vars: `accessToken` from Login/Register, `logstashSecret` for Logstash-authenticated routes.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "logstashSecret",
+      "value": "change-me"
+    },
+    {
+      "key": "userEmail",
+      "value": "demo@example.com"
+    },
+    {
+      "key": "userPassword",
+      "value": "TestPass1a"
+    },
+    {
+      "key": "userName",
+      "value": "Demo User"
+    },
+    {
+      "key": "blockId",
+      "value": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "key": "hypothesisId",
+      "value": "00000000-0000-0000-0000-000000000002"
+    },
+    {
+      "key": "graphNode",
+      "value": "10.0.0.1"
+    },
+    {
+      "key": "eventFingerprint",
+      "value": "sample-fingerprint-sha256"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "exec": [
+          "const host = pm.environment.get(\"HOST_URL\");",
+          "if (!host) {",
+          "    console.warn(\"Select LOCAL or PROD environment (HOST_URL).\");",
+          "}"
+        ],
+        "type": "text/javascript"
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{HOST_URL}}/api/auth/register",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\",\n  \"name\": \"{{userName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    try {",
+                  "        const j = pm.response.json();",
+                  "        if (j.access_token) {",
+                  "            pm.collectionVariables.set(\"accessToken\", j.access_token);",
+                  "        }",
+                  "    } catch (e) {}",
+                  "}",
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{HOST_URL}}/api/auth/login",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "{{userEmail}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{userPassword}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    try {",
+                  "        const j = pm.response.json();",
+                  "        if (j.access_token) {",
+                  "            pm.collectionVariables.set(\"accessToken\", j.access_token);",
+                  "        }",
+                  "    } catch (e) {}",
+                  "}",
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{HOST_URL}}/api/health",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "DB test",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{HOST_URL}}/api/health/db-test",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "health",
+                "db-test"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/users/me",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Cold",
+      "item": [
+        {
+          "name": "Ingest (WORM seal_event_batch)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Logstash-Secret",
+                "value": "{{logstashSecret}}"
+              }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/cold/ingest",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "cold",
+                "ingest"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  {\n    \"@timestamp\": \"2026-01-15T12:00:00Z\",\n    \"message\": \"test\",\n    \"host\": {\n      \"name\": \"host-a\",\n      \"os\": {\n        \"name\": \"linux\"\n      }\n    },\n    \"agent\": {\n      \"id\": \"agent-test-1\"\n    },\n    \"event\": {\n      \"dataset\": \"iam.user\",\n      \"id\": \"evt-1\"\n    }\n  }\n]",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    try {",
+                  "        const j = pm.response.json();",
+                  "        if (j.block_id) pm.collectionVariables.set(\"blockId\", j.block_id);",
+                  "    } catch (e) {}",
+                  "}",
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.eql(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Stack ingest (ColdStoredBlock)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Logstash-Secret",
+                "value": "{{logstashSecret}}"
+              }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/cold/stack-ingest",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "cold",
+                "stack-ingest"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"events\": [\n    {\n      \"@timestamp\": \"2026-01-15T12:00:00Z\",\n      \"message\": \"cold stack\",\n      \"host\": {\n        \"name\": \"host-b\"\n      },\n      \"event\": {\n        \"dataset\": \"system.auth\",\n        \"id\": \"evt-2\"\n      }\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    try {",
+                  "        const j = pm.response.json();",
+                  "        if (j.block_id) pm.collectionVariables.set(\"blockId\", j.block_id);",
+                  "    } catch (e) {}",
+                  "}",
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.eql(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rederive OCSF by fingerprint",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{HOST_URL}}/api/cold/rederive/{{eventFingerprint}}",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "cold",
+                "rederive",
+                "{{eventFingerprint}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify block",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/cold/verify/{{blockId}}",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "cold",
+                "verify",
+                "{{blockId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ML",
+      "item": [
+        {
+          "name": "Infer batch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Logstash-Secret",
+                "value": "{{logstashSecret}}"
+              }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/ml/infer",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "ml",
+                "infer"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  {\n    \"@timestamp\": \"2026-01-15T12:00:00Z\",\n    \"forensiq\": {\n      \"trust_tier\": \"iam\",\n      \"event_fingerprint\": \"fp-demo-1\"\n    },\n    \"event\": {\n      \"id\": \"e1\"\n    },\n    \"ml\": {\n      \"source_ip\": \"10.0.0.1\",\n      \"user_id\": \"u1\",\n      \"action\": \"AUTH\",\n      \"outcome\": \"failure\"\n    }\n  }\n]",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Hypotheses",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/hypotheses",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "hypotheses"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    try {",
+                  "        const j = pm.response.json();",
+                  "        if (Array.isArray(j) && j.length > 0 && j[0].id) {",
+                  "            pm.collectionVariables.set(\"hypothesisId\", j[0].id);",
+                  "        }",
+                  "    } catch (e) {}",
+                  "}",
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List filtered",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/hypotheses?offset=0&limit=50&min_score=0.0",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "hypotheses"
+              ],
+              "query": [
+                {
+                  "key": "offset",
+                  "value": "0"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "min_score",
+                  "value": "0.0"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get by id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/hypotheses/{{hypothesisId}}",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "hypotheses",
+                "{{hypothesisId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Patch",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/hypotheses/{{hypothesisId}}",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "hypotheses",
+                "{{hypothesisId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"confirmed\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Counterfactual (modifiers)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/hypotheses/{{hypothesisId}}/counterfactual",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "hypotheses",
+                "{{hypothesisId}}",
+                "counterfactual"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modifiers\": {\n    \"trust_tier\": \"iot\",\n    \"anomaly_score\": 0.2\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Graph",
+      "item": [
+        {
+          "name": "Subgraph k-hop",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/graph/subgraph/{{graphNode}}?k=2",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "graph",
+                "subgraph",
+                "{{graphNode}}"
+              ],
+              "query": [
+                {
+                  "key": "k",
+                  "value": "2"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bridges",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/graph/bridges",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "graph",
+                "bridges"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Phase 6",
+      "item": [
+        {
+          "name": "RAG query",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/phase6/rag/query",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "phase6",
+                "rag",
+                "query"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"auth failure\",\n  \"strict_critic\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Counterfactual simulate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/phase6/counterfactual/simulate",
+              "host": [
+                "{{HOST_URL}}"
+              ],
+              "path": [
+                "api",
+                "phase6",
+                "counterfactual",
+                "simulate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hypothesis_id\": \"HYP-00000000\",\n  \"modify_attribute\": \"anomaly_score\",\n  \"modify_value\": 0.1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

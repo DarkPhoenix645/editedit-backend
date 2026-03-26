@@ -1,0 +1,218 @@
+# ForensIQ Fusion Policy Rules
+# Deterministic rules separating detection from reasoning.
+# Score = BaseAnomaly × TrustWeight × PatternSeverity
+# Rules are evaluated top-down; highest severity multiplier wins.
+#
+# Reference: MITRE ATT&CK Matrix for Enterprise
+# Last Updated: 2026-03-25
+
+rules:
+  # --- Tier 1: CRITICAL THREATS (Severity 1.8 - 2.0) ---
+  # Immediate investigation required. High probability of active compromise.
+
+  - id: "R001"
+    description: "Critical: High-trust source (Kernel/IAM) behaving anomalously"
+    severity_multiplier: 1.8
+    conditions:
+      min_anomaly: 0.7
+      trust_tiers: ["kernel", "iam"]
+    mitre_techniques: ["T1078", "T1548"]
+    mitre_technique: "T1003"
+
+  - id: "R100"
+    description: "Critical: Defense Evasion (Log/Audit tampering)"
+    severity_multiplier: 2.0
+    conditions:
+      min_anomaly: 0.2
+      actions: ["CLEAR_LOGS", "DISABLE_AUDIT", "STOP_SERVICE", "DELETE_HISTORY"]
+    mitre_techniques: ["T1070", "T1562"]
+    mitre_technique: "T1070"
+
+  - id: "R101"
+    description: "Critical: Destructive Impact (Wipe/Encrypt)"
+    severity_multiplier: 2.0
+    conditions:
+      min_anomaly: 0.3
+      actions: ["WIPE_DISK", "DELETE_VOLUME", "ENCRYPT_FILE", "FORMAT_DRIVE"]
+    mitre_techniques: ["T1485", "T1486"]
+    mitre_technique: "T1486"
+
+  - id: "R102"
+    description: "Critical: Credential Dumping attempts"
+    severity_multiplier: 1.9
+    conditions:
+      min_anomaly: 0.4
+      actions: ["DUMP_LSASS", "ACCESS_SHADOW", "KEYLOG_START", "PROC_ACCESS"]
+    mitre_techniques: ["T1003", "T1056"]
+    mitre_technique: "T1003"
+
+  - id: "R007"
+    description: "Critical: Unauthorized access to restricted asset"
+    severity_multiplier: 1.7
+    conditions:
+      min_anomaly: 0.3
+      actions: ["FILE_ACCESS", "DB_QUERY", "API_CALL", "S3_GET"]
+      metadata:
+        restricted_asset: true
+    mitre_techniques: ["T1213", "T1078"]
+    mitre_technique: "T1078"
+
+
+  # --- Tier 2: HIGH SEVERITY (Severity 1.5 - 1.7) ---
+  # Strong indicators of attack lifecycle (Persistence, Escalation).
+
+  - id: "R003"
+    description: "High: Privilege Escalation from App/OS tier"
+    severity_multiplier: 1.6
+    conditions:
+      min_anomaly: 0.4
+      trust_tiers: ["application", "os"]
+      actions: ["ESCALATION", "SUDO", "SUDO_EXEC", "SU", "ROLE_CHANGE", "DEBUG_PRIV"]
+    mitre_techniques: ["T1548", "T1068"]
+    mitre_technique: "T1548"
+
+  - id: "R002"
+    description: "High: After-hours access to sensitive operations"
+    severity_multiplier: 1.5
+    conditions:
+      min_anomaly: 0.5
+      actions: ["FILE_ACCESS", "ESCALATION", "DATA_EXPORT", "LOGIN", "AUTH_SUCCESS", "CLOUD_LOGIN", "API_CALL"]
+      metadata:
+        after_hours: true
+    mitre_techniques: ["T1567", "T1078"]
+    mitre_technique: "T1567"
+
+  - id: "R201"
+    description: "High: Persistence via Account/Task creation"
+    severity_multiplier: 1.5
+    conditions:
+      min_anomaly: 0.4
+      actions: ["CREATE_USER", "ADD_TO_GROUP", "SCHEDULE_TASK", "REGISTER_SERVICE"]
+    mitre_techniques: ["T1136", "T1053", "T1543"]
+    mitre_technique: "T1543"
+
+  - id: "R202"
+    description: "High: File write to persistence-critical path (cron/systemd)"
+    severity_multiplier: 1.55
+    conditions:
+      min_anomaly: 0.35
+      actions: ["FILE_WRITE"]
+      metadata:
+        restricted_asset: true
+    mitre_techniques: ["T1037", "T1543"]
+    mitre_technique: "T1053.005"
+
+  - id: "R500"
+    description: "High: Brute-force / credential stuffing (SSH auth failures)"
+    severity_multiplier: 1.45
+    conditions:
+      min_anomaly: 0.45
+      actions: ["SSH_AUTH_FAIL", "AUTH_FAIL"]
+      metadata:
+        after_hours: true
+    mitre_techniques: ["T1110"]
+    mitre_technique: "T1110"
+
+  - id: "R502"
+    description: "High: Privileged or sensitive auth success in suspicious context"
+    severity_multiplier: 1.65
+    conditions:
+      min_anomaly: 0.42
+      actions: ["AUTH_SUCCESS", "LOGIN"]
+      metadata:
+        after_hours: true
+        restricted_asset: true
+    mitre_techniques: ["T1078", "T1110"]
+    mitre_technique: "T1078"
+
+  - id: "R608"
+    description: "Critical: IoT/edge C2 or bulk egress (low tier needs high severity)"
+    severity_multiplier: 2.0
+    conditions:
+      min_anomaly: 0.48
+      trust_tiers: ["iot"]
+      actions: ["TCP_CONNECT", "DATA_EXPORT", "HTTP_POST"]
+      metadata:
+        after_hours: true
+        restricted_asset: true
+    mitre_techniques: ["T1071", "T1048"]
+    mitre_technique: "T1071"
+
+  - id: "R610"
+    description: "High: Cloud control-plane / API misuse with sensitive flags"
+    severity_multiplier: 1.65
+    conditions:
+      min_anomaly: 0.48
+      trust_tiers: ["cloud"]
+      actions: ["CLOUD_LOGIN", "API_CALL"]
+      metadata:
+        after_hours: true
+        restricted_asset: true
+    mitre_techniques: ["T1078", "T1213"]
+    mitre_technique: "T1078"
+
+  - id: "R612"
+    description: "Medium: Outbound C2-style connect from restricted asset"
+    severity_multiplier: 1.35
+    conditions:
+      min_anomaly: 0.42
+      actions: ["TCP_CONNECT"]
+      metadata:
+        restricted_asset: true
+    mitre_techniques: ["T1071", "T1572"]
+    mitre_technique: "T1071"
+
+
+  # --- Tier 3: MEDIUM SEVERITY (Severity 1.2 - 1.4) ---
+  # Suspicious behavior requiring context (Movement, Exfil, Discovery).
+
+  - id: "R005"
+    description: "Medium: Data Exfiltration indicators"
+    severity_multiplier: 1.4
+    conditions:
+      min_anomaly: 0.4
+      actions: ["DATA_EXPORT", "FILE_UPLOAD", "HTTP_POST", "COPY", "EMAIL_SEND", "FTP_PUT"]
+      metadata:
+        after_hours: true
+    mitre_techniques: ["T1041", "T1567"]
+    mitre_technique: "T1041"
+
+  - id: "R004"
+    description: "Medium: Lateral Movement (Remote Access)"
+    severity_multiplier: 1.3
+    conditions:
+      min_anomaly: 0.3
+      actions: ["SSH", "RDP", "RDP_CONNECT", "SMB_CONNECT", "REMOTE_EXEC", "WINRM", "SMB_MOUNT"]
+    mitre_techniques: ["T1021", "T1563"]
+    mitre_technique: "T1021"
+
+  - id: "R301"
+    description: "Medium: Reconnaissance & Discovery"
+    severity_multiplier: 1.25
+    conditions:
+      min_anomaly: 0.5
+      actions: ["PORT_SCAN", "ENUMERATE_USERS", "NET_DISCOVERY", "PROCESS_LIST"]
+    mitre_techniques: ["T1082", "T1087", "T1046"]
+    mitre_technique: "T1046"
+
+
+  # --- Tier 4: LOW/UNKNOWN (Severity 1.0 - 1.1) ---
+  # Anomalies from untrusted sources or generic deviations.
+
+  - id: "R006"
+    description: "Low: Anomalous IoT/Unknown activity"
+    severity_multiplier: 1.1
+    conditions:
+      min_anomaly: 0.6
+      trust_tiers: ["iot", "unknown"]
+    mitre_techniques: ["T1071"]
+    mitre_technique: "T1071"
+
+  - id: "R401"
+    description: "Low: Generic Application Anomaly"
+    severity_multiplier: 1.05
+    conditions:
+      min_anomaly: 0.8
+      trust_tiers: ["application"]
+    mitre_techniques: ["T1071"]
+    mitre_technique: "T1071"

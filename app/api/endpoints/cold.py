@@ -1,24 +1,71 @@
 from __future__ import annotations
 
 import json
-from uuid import uuid5, NAMESPACE_URL
+from typing import Any
+from uuid import UUID, uuid5, NAMESPACE_URL
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Body, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.deps import get_current_user
 from app.core.worm import read_worm_line
 from app.db.models import HotColdTrace, LogSource
 from app.db.session import get_db
+from app.schemas.cold_ingest import ColdIngestResponse as ColdStackIngestResponse
 from app.schemas.ingest import ColdIngestResponse
 from app.services.ocsf_rederive_v1_0 import apply_ocsf_mapping_v1_0
 from app.services.sealing_service import (
     compute_fingerprint,
     compute_fingerprint_values_only,
+    process_cold_events,
     seal_event_batch,
+    verify_sealed_block,
 )
 
 router = APIRouter()
+
+
+def _coerce_stack_body(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        events = payload
+    elif isinstance(payload, dict) and isinstance(payload.get("events"), list):
+        events = payload["events"]
+    elif isinstance(payload, dict):
+        events = [payload]
+    else:
+        raise HTTPException(status_code=422, detail="body must be a JSON object or array")
+
+    if not events:
+        raise HTTPException(status_code=422, detail="at least one event required")
+    for event in events:
+        if not isinstance(event, dict):
+            raise HTTPException(status_code=422, detail="each event must be a JSON object")
+    return events
+
+
+@router.post("/stack-ingest", response_model=ColdStackIngestResponse)
+def ingest_cold_stack(
+    body: Any = Body(...),
+    db: Session = Depends(get_db),
+    x_logstash_secret: str = Header(..., alias="X-Logstash-Secret"),
+):
+    """Cold-stack path: `process_cold_events` + `ColdStoredBlock` (same as legacy `cold_ingest` module)."""
+    if x_logstash_secret != settings.LOGSTASH_SHARED_SECRET:
+        raise HTTPException(status_code=403, detail="Invalid secret")
+    events = _coerce_stack_body(body)
+    try:
+        block = process_cold_events(db, events)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ColdStackIngestResponse(
+        source_id=block.source_id,
+        block_id=block.id,
+        sequence_number=block.sequence_number,
+        sealed_event_count=block.log_count,
+        authoritative_time=block.authoritative_time,
+    )
 
 
 @router.post("/ingest", response_model=ColdIngestResponse)
@@ -136,3 +183,13 @@ def rederive_ocsf_by_fingerprint(
 
     raw_event = json.loads(raw_line)
     return apply_ocsf_mapping_v1_0(raw_event)
+
+
+@router.post("/verify/{block_id}")
+def verify_cold_block(
+    block_id: UUID,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    """Recompute Merkle/chain and verify RSA (WORM `seal_event_batch` or `cold_stored_blocks` row)."""
+    return verify_sealed_block(db, block_id)

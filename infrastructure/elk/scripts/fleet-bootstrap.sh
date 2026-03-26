@@ -154,7 +154,7 @@ payload_ls() {
       '{
         name: $name,
         type: "logstash",
-        hosts: ["logstash:5044"],
+        hosts: ["https://logstash:5044"],
         is_default: false,
         is_default_monitoring: false,
         config_yaml: "",
@@ -175,7 +175,7 @@ payload_ls() {
       '{
         name: $name,
         type: "logstash",
-        hosts: ["logstash:5044"],
+        hosts: ["https://logstash:5044"],
         is_default: false,
         is_default_monitoring: false,
         config_yaml: $cfg

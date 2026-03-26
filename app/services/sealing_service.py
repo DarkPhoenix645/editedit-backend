@@ -7,7 +7,9 @@ import statistics
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+from uuid import UUID
 
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from sqlalchemy import desc
@@ -669,3 +671,211 @@ def process_cold_events(db: Session, events: list[dict[str, Any]]) -> SealedBloc
     db.commit()
     db.refresh(block)
     return block
+
+
+def verify_cold_stored_block(db: Session, block_id: UUID) -> dict[str, Any]:
+    """
+    Recompute Merkle root and chain hash for a cold-sealed block; verify RSA-PSS signature.
+    Uses the same material as process_cold_events (not hot-path seal_event_batch).
+    """
+    block = db.query(SealedBlock).filter(SealedBlock.id == block_id).first()
+    if block is None:
+        return {"verified": False, "message": "Block not found", "block_id": str(block_id)}
+
+    cold = db.query(ColdStoredBlock).filter(ColdStoredBlock.block_id == block_id).first()
+    if cold is None:
+        return {"verified": False, "message": "No cold_stored_blocks row for this block", "block_id": str(block_id)}
+
+    events = cold.events
+    if not isinstance(events, list) or not events:
+        return {"verified": False, "message": "Cold block has no event list", "block_id": str(block_id)}
+
+    merkle_recomputed = compute_merkle_root(events)
+    if merkle_recomputed != block.merkle_root:
+        return {
+            "verified": False,
+            "message": "Merkle root mismatch",
+            "block_id": str(block_id),
+            "expected_merkle_hex": block.merkle_root.hex(),
+            "recomputed_merkle_hex": merkle_recomputed.hex(),
+        }
+
+    canonical_events = [_canonical_json_bytes(event) for event in events]
+    leaf_expected = [_sha256_bytes(b).hex() for b in canonical_events]
+    if cold.leaf_hashes != leaf_expected:
+        return {"verified": False, "message": "Leaf hash list mismatch", "block_id": str(block_id)}
+
+    if cold.merkle_root_hex != merkle_recomputed.hex():
+        return {"verified": False, "message": "Stored merkle_root_hex mismatch", "block_id": str(block_id)}
+
+    prev_block = (
+        db.query(SealedBlock)
+        .filter(
+            SealedBlock.source_id == block.source_id,
+            SealedBlock.sequence_number == block.sequence_number - 1,
+        )
+        .first()
+    )
+    previous_chain_hash = prev_block.chain_hash if prev_block is not None else b""
+
+    payload_hash = merkle_recomputed
+    chain_material = b"|".join(
+        [
+            previous_chain_hash,
+            payload_hash,
+            str(block.sequence_number).encode("utf-8"),
+            block.window_start.isoformat().encode("utf-8"),
+            block.window_end.isoformat().encode("utf-8"),
+            block.authoritative_time.isoformat().encode("utf-8"),
+            str(block.log_count).encode("utf-8"),
+        ]
+    )
+    chain_hash = _sha256_bytes(chain_material)
+    if chain_hash != block.chain_hash:
+        return {
+            "verified": False,
+            "message": "Chain hash mismatch (possible tampering or wrong predecessor)",
+            "block_id": str(block_id),
+            "expected_chain_hex": block.chain_hash.hex(),
+            "recomputed_chain_hex": chain_hash.hex(),
+        }
+
+    if cold.chain_hash_hex != chain_hash.hex():
+        return {"verified": False, "message": "Cold chain_hash_hex mismatch", "block_id": str(block_id)}
+
+    public_key = _load_coldstack_private_key().public_key()
+    try:
+        public_key.verify(
+            block.rsa_signature,
+            chain_hash,
+            padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
+            hashes.SHA256(),
+        )
+    except InvalidSignature:
+        return {"verified": False, "message": "RSA signature verification failed", "block_id": str(block_id)}
+
+    return {
+        "verified": True,
+        "message": "Merkle, chain, and signature OK",
+        "block_id": str(block_id),
+        "sequence_number": block.sequence_number,
+        "log_count": block.log_count,
+        "signature_valid": True,
+        "clock_skew_flags": [],
+    }
+
+
+def _worm_key_from_s3_uri(storage_uri: str) -> str:
+    if storage_uri.startswith("s3://"):
+        rest = storage_uri[5:]
+        slash = rest.find("/")
+        if slash >= 0:
+            return rest[slash + 1 :]
+    return storage_uri
+
+
+def verify_seal_event_batch_block(db: Session, block_id: UUID) -> dict[str, Any]:
+    """
+    Verify a block produced by seal_event_batch (WORM JSONL payload).
+    Signature uses SEALING_PRIVATE_KEY (not coldstack).
+    """
+    block = db.query(SealedBlock).filter(SealedBlock.id == block_id).first()
+    if block is None:
+        return {
+            "verified": False,
+            "signature_valid": False,
+            "message": "Block not found",
+            "block_id": str(block_id),
+            "clock_skew_flags": [],
+        }
+
+    if not block.storage_uri.startswith("s3://"):
+        return {
+            "verified": False,
+            "signature_valid": False,
+            "message": "Block has no S3 WORM storage_uri",
+            "block_id": str(block_id),
+            "clock_skew_flags": [],
+        }
+
+    from app.core.worm import read_worm_object
+
+    key = _worm_key_from_s3_uri(block.storage_uri)
+    raw = read_worm_object(key)
+    lines = [ln for ln in raw.split(b"\n") if ln.strip()]
+    try:
+        events = [json.loads(ln.decode("utf-8")) for ln in lines]
+    except json.JSONDecodeError as exc:
+        return {
+            "verified": False,
+            "signature_valid": False,
+            "message": f"Invalid JSON in WORM payload: {exc}",
+            "block_id": str(block_id),
+            "clock_skew_flags": [],
+        }
+
+    canonical_lines = [canonical_event_bytes(ev) for ev in events]
+    payload = b"\n".join(canonical_lines)
+    payload_hash = hashlib.sha256(payload).digest()
+    merkle_root = compute_merkle_root(events)
+
+    seq = int(block.sequence_number)
+    prev = (
+        db.query(SealedBlock)
+        .filter(
+            SealedBlock.source_id == block.source_id,
+            SealedBlock.sequence_number == seq - 1,
+        )
+        .first()
+    )
+    prev_hash = b"\x00" * 32 if seq <= 1 or prev is None else prev.chain_hash
+    chain_hash = hashlib.sha256(prev_hash + merkle_root + payload_hash + str(seq).encode("utf-8")).digest()
+
+    hashes_ok = (
+        payload_hash == block.payload_hash
+        and merkle_root == block.merkle_root
+        and chain_hash == block.chain_hash
+    )
+
+    public_key = _load_private_key().public_key()
+    try:
+        public_key.verify(
+            block.rsa_signature,
+            block.chain_hash,
+            padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
+            hashes.SHA256(),
+        )
+        sig_ok = True
+    except InvalidSignature:
+        sig_ok = False
+
+    prev_for_time = prev
+    time_report = _build_anti_timestamp_report(
+        events,
+        block.authoritative_time,
+        prev_for_time,
+        str(block.source_id),
+    )
+    clock_skew_flags = time_report.get("anomalies", [])
+
+    ok = bool(hashes_ok and sig_ok)
+    return {
+        "verified": ok,
+        "signature_valid": sig_ok,
+        "hashes_match": hashes_ok,
+        "message": "Merkle, chain, and RSA-PSS OK"
+        if ok
+        else ("hash mismatch" if not hashes_ok else "signature invalid"),
+        "block_id": str(block_id),
+        "sequence_number": block.sequence_number,
+        "log_count": len(events),
+        "clock_skew_flags": clock_skew_flags,
+    }
+
+
+def verify_sealed_block(db: Session, block_id: UUID) -> dict[str, Any]:
+    """Route to cold-row verification or hot-path WORM verification."""
+    cold = db.query(ColdStoredBlock).filter(ColdStoredBlock.block_id == block_id).first()
+    if cold is not None:
+        return verify_cold_stored_block(db, block_id)
+    return verify_seal_event_batch_block(db, block_id)

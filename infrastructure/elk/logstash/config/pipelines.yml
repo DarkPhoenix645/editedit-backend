@@ -1,8 +1,13 @@
 - pipeline.id: ingest
   path.config: "/usr/share/logstash/pipeline/ingest.conf"
 
+# larger batches + longer delay = fewer HTTP posts to FastAPI (json_batch).
 - pipeline.id: hot
   path.config: "/usr/share/logstash/pipeline/hot.conf"
+  pipeline.batch.size: 2000
+  pipeline.batch.delay: 15000
 
 - pipeline.id: cold
   path.config: "/usr/share/logstash/pipeline/cold.conf"
+  pipeline.batch.size: 2000
+  pipeline.batch.delay: 15000

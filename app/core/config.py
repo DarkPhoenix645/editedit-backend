@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     COLDSTACK_STORAGE_URI_PREFIX: str = "postgresql://cold_stored_blocks"
     COLDSTACK_TIMESTAMP_AUTHORITY: str = "backend-local"
     COLDSTACK_MAX_CLOCK_SKEW_MS: int = 500
+    # ML / anomaly
+    ANOMALY_MODEL_PATH: str = ""
+    ANOMALY_WARMUP_THRESHOLD: int = 500
+    RAG_RECOVERY_BATCH_SIZE: int = 1000
+    # Normalization: business hours for after_hours (local UTC hour bounds)
+    AFTER_HOURS_START_HOUR: int = 19
+    AFTER_HOURS_END_HOUR: int = 7
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",

@@ -1,4 +1,5 @@
 from sqlalchemy import (
+    Boolean,
     Column,
     String,
     Float,
@@ -47,6 +48,7 @@ class ForensicCase(Base):
 
     investigator = relationship("User", back_populates="cases")
     hypotheses = relationship("ForensicHypothesis", back_populates="case")
+    decisions = relationship("InvestigatorDecision", back_populates="case")
 
 class ForensicHypothesis(Base):
     __tablename__ = "forensic_hypotheses"
@@ -55,9 +57,23 @@ class ForensicHypothesis(Base):
     generation_source = Column(String)
     anomaly_score = Column(Float)
     confidence_score = Column(Float)
+    trust_weight = Column(Float, nullable=True)
+    pattern_severity = Column(Float, nullable=True)
+    rule_trace = Column(JSONB, nullable=True)
+    fusion_policy_hash = Column(String(64), nullable=True)
+    title = Column(String(512), nullable=True)
+    description = Column(Text, nullable=True)
+    hypothesis_uid = Column(String(64), nullable=True, index=True)
+    evidence_ids = Column(JSONB, nullable=True)
     hypotheses = Column(Text)
     status = Column(String, server_default="pending")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    event_trust_tier = Column(String(32), nullable=True)
+    event_action = Column(String(255), nullable=True)
+    event_metadata = Column(JSONB, nullable=True)
+    mitre_technique_id = Column(String(20), nullable=True)
+    mitre_technique_name = Column(String(200), nullable=True)
+    mitre_tactic = Column(String(100), nullable=True)
 
     case = relationship("ForensicCase", back_populates="hypotheses")
     evidence_links = relationship("HypothesisEvidenceMap", back_populates="hypothesis")
@@ -130,6 +146,32 @@ class ColdStoredBlock(Base):
 
     block = relationship("SealedBlock", back_populates="cold_payload")
 
+class LogEvent(Base):
+    """Persisted events for RAG recovery (ML ingest)."""
+
+    __tablename__ = "log_events"
+
+    event_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source_id = Column(UUID(as_uuid=True), ForeignKey("log_sources.id", ondelete="SET NULL"), nullable=True)
+    event_json = Column(JSONB, nullable=False)
+    event_time = Column(DateTime(timezone=True), nullable=False)
+    ingested_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    source = relationship("LogSource", foreign_keys=[source_id])
+
+
+class ModelSnapshot(Base):
+    __tablename__ = "model_snapshots"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    model_type = Column(String, nullable=False)
+    events_seen = Column(BigInteger, nullable=False)
+    is_calibrating = Column(Boolean, nullable=False)
+    checkpoint_path = Column(String, nullable=True)
+    config_hash = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class HotColdTrace(Base):
     __tablename__ = "hot_cold_traces"
     id = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -150,9 +192,12 @@ class InvestigatorDecision(Base):
     action_type = Column(String)
     hypothesis_id = Column(UUID(as_uuid=True), ForeignKey("forensic_hypotheses.id"), nullable=True)
     reasoning_notes = Column(String)
+    evidence_ids = Column(JSONB, server_default="[]", nullable=False)
+    ai_citation = Column(Text, nullable=True)
     ui_state_snapshot = Column(JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
+    case = relationship("ForensicCase", foreign_keys=[case_id])
     investigator = relationship("User", back_populates="decisions")
 
 class HypothesisEvidenceMap(Base):
@@ -160,6 +205,7 @@ class HypothesisEvidenceMap(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     hypothesis_id = Column(UUID(as_uuid=True), ForeignKey("forensic_hypotheses.id"))
     elastic_event_id = Column(String)
+    event_fingerprint = Column(String, index=True, nullable=True)
     evidence_weight = Column(Float)
 
     hypothesis = relationship("ForensicHypothesis", back_populates="evidence_links")

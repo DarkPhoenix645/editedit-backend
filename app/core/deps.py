@@ -1,19 +1,21 @@
 from typing import Optional
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
-from sqlalchemy.orm import Session
 from uuid import UUID
 
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from sqlalchemy.orm import Session
+
 from app.core.config import settings
-from app.db.session import get_db
 from app.db.models import User
+from app.db.session import get_db
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
+
 def get_current_user(
     token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -38,3 +40,11 @@ def get_current_user(
         raise credentials_exception
 
     return user
+
+
+def get_ml_engine(request: Request):
+    return request.app.state.ml
+
+
+# Alias matching plan / app.ml.get_ml
+get_ml = get_ml_engine

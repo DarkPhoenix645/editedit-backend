@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import boto3
-from botocore.client import BaseClient, Config
+from botocore.client import Config
 from botocore.exceptions import ClientError
 
 from app.core.config import settings
@@ -20,7 +20,8 @@ def _missing_object_lock_configuration(exc: ClientError) -> bool:
     return code == "InvalidRequest" and "ObjectLockConfiguration" in msg
 
 
-def get_worm_client() -> BaseClient:
+def get_worm_client() -> Any:
+    """S3 client; typed as Any so boto service methods (get_object, put_object) resolve for type checkers."""
     return boto3.client(
         "s3",
         endpoint_url=settings.WORM_ENDPOINT,
@@ -69,6 +70,13 @@ def upload_to_worm(key: str, data: bytes, metadata: dict[str, str] | None = None
             raise RuntimeError(f"WORM upload failed: {exc}") from exc
 
     return str(resp.get("ETag", "")).strip('"')
+
+
+def read_worm_object(key: str) -> bytes:
+    """Full object read (used for block integrity verification)."""
+    client = get_worm_client()
+    resp = client.get_object(Bucket=settings.WORM_BUCKET, Key=key)
+    return resp["Body"].read()
 
 
 def read_worm_line(key: str, offset: int) -> bytes:

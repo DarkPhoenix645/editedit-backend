@@ -1,0 +1,209 @@
+"""Phase 5 Pydantic schemas — hot path inference and evidence contracts."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import Enum
+from typing import Any, Optional
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class TrustTier(str, Enum):
+    KERNEL = "kernel"
+    IAM = "iam"
+    OS = "os"
+    APPLICATION = "application"
+    CLOUD = "cloud"
+    IOT = "iot"
+    UNKNOWN = "unknown"
+
+
+class HypothesisStatus(str, Enum):
+    ACTIVE = "active"
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
+
+
+class LogEvent(BaseModel):
+    event_id: str
+    timestamp: datetime
+    source_ip: str
+    dest_ip: Optional[str] = None
+    user_id: str
+    action: str
+    resource: Optional[str] = None
+    outcome: Optional[str] = Field(None, description="e.g. success | failure")
+    source_id: Optional[str] = Field(None, description="UUID of log_sources row")
+    message: Optional[str] = None
+    fingerprint: Optional[str] = Field(None, description="Upstream event fingerprint/hash")
+    trust_tier: TrustTier = TrustTier.APPLICATION
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class Hypothesis(BaseModel):
+    hypothesis_id: str
+    title: str
+    description: str
+    score: float = Field(..., ge=0.0, le=1.0)
+    anomaly_score: float = Field(..., ge=0.0, le=1.0)
+    trust_weight: float = Field(..., ge=0.0, le=1.0)
+    pattern_severity: float = Field(..., ge=0.0, le=2.0)
+    rule_trace: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+    status: HypothesisStatus = HypothesisStatus.ACTIVE
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    mitre_techniques: list[str] = Field(default_factory=list)
+    case_id: Optional[UUID] = None
+    mitre_technique_id: Optional[str] = None
+    mitre_technique_name: Optional[str] = None
+    mitre_tactic: Optional[str] = None
+    cryptographic_evidence_snippet: Optional[str] = None
+    neuro_symbolic_reasoning_chain: list[str] = Field(default_factory=list)
+
+
+class MitreTechniqueOut(BaseModel):
+    id: str
+    name: str
+    tactic: str
+    tactic_id: str
+    description: str
+    keywords: list[str] = Field(default_factory=list)
+
+
+class InferEventRequest(BaseModel):
+    events: list[LogEvent]
+
+
+class InferEventResponse(BaseModel):
+    hypotheses: list[Hypothesis]
+    events_processed: int
+    graph_nodes: int
+    graph_edges: int
+    block_id: Optional[str] = None
+    calibrating: bool = False
+    rag_ingest_ok: bool = True
+    processing_time_ms: int = 0
+
+
+class InferAckResponse(BaseModel):
+    """Minimal ack for Logstash HTTP push (hypotheses persisted in DB)."""
+
+    events_processed: int
+    hypotheses_emitted: int
+    calibrating: bool
+    graph_nodes: int
+    graph_edges: int
+    processing_time_ms: int = 0
+
+
+class VerificationRequest(BaseModel):
+    block_id: str
+    chain_hash: str
+
+
+class VerificationResult(BaseModel):
+    block_id: str
+    verified: bool
+    message: str
+    tsa_compliant: bool = False
+
+
+class CounterfactualRequest(BaseModel):
+    hypothesis_id: str
+    modify_attribute: str
+    modify_value: Any
+
+
+class CounterfactualResponse(BaseModel):
+    original_score: float
+    modified_score: float
+    delta: float
+    explanation: str
+
+
+class RAGQueryRequest(BaseModel):
+    query: str
+    context_event_ids: Optional[list[str]] = None
+    strict_critic: bool = False
+
+
+class RAGQueryResponse(BaseModel):
+    answer: str
+    cited_event_ids: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
+
+
+class EvidenceItem(BaseModel):
+    event_fingerprint: Optional[str] = None
+    elastic_event_id: Optional[str] = None
+    block_id: Optional[UUID] = None
+    cold_offset: Optional[int] = None
+    storage_uri: Optional[str] = None
+    raw_log_line: Optional[str] = None
+
+
+class HypothesisOut(BaseModel):
+    id: UUID
+    hypothesis_uid: Optional[str] = None
+    title: str = ""
+    anomaly_score: float = 0.0
+    confidence_score: float = 0.0
+    severity: str = "LOW"
+    mitre_technique_id: Optional[str] = None
+    mitre_technique_name: Optional[str] = None
+    mitre_tactic: Optional[str] = None
+    rule_id: Optional[str] = None
+    status: str = "pending"
+    created_at: datetime
+    evidence_count: int = 0
+    case_id: Optional[UUID] = None
+
+
+class HypothesisDetail(BaseModel):
+    """Full hypothesis for UI: listing row + reasoning, MITRE, WORM evidence."""
+
+    id: UUID
+    hypothesis_uid: Optional[str] = None
+    case_id: Optional[UUID] = None
+    title: str = ""
+    description: Optional[str] = None
+    hypotheses_legacy: Optional[str] = None
+    anomaly_score: float = 0.0
+    confidence_score: float = 0.0
+    severity: str = "LOW"
+    neural_anomaly_score: float = 0.0
+    symbolic_risk_score: float = 0.0
+    trust_weight: float = 0.0
+    pattern_severity: float = 1.0
+    rule_trace: list[str] = Field(default_factory=list)
+    reasoning_chain: list[str] = Field(default_factory=list)
+    fusion_policy_hash: Optional[str] = None
+    evidence_ids: Optional[list[Any]] = None
+    mitre_technique_id: Optional[str] = None
+    mitre_technique_name: Optional[str] = None
+    mitre_tactic: Optional[str] = None
+    mitre_techniques: list[str] = Field(default_factory=list)
+    rule_id: Optional[str] = None
+    status: str = "pending"
+    event_trust_tier: Optional[str] = None
+    event_action: Optional[str] = None
+    event_metadata: Optional[dict[str, Any]] = None
+    created_at: datetime
+    evidence: list[EvidenceItem] = Field(default_factory=list)
+
+
+class HypothesisCaseAttachRequest(BaseModel):
+    case_id: UUID
+
+
+class CounterfactualModifiersBody(BaseModel):
+    modifiers: dict[str, Any]
+
+
+class CounterfactualModifiersResponse(BaseModel):
+    original_score: float
+    modified_score: float
+    would_fire: bool
+    explanation: str = ""
