@@ -24,7 +24,7 @@ vars:
     sh: echo "${KIBANA_PORT:-5601}"
   OCSF_HOT_RETENTION_DAYS:
     sh: echo "${OCSF_HOT_RETENTION_DAYS:-7}"
-  SYNTH_LOG_COUNT: 5000
+  SYNTH_LOG_COUNT: 500
   SYNTH_LOG_SLEEP_SEC: 0.01
 
 tasks:
@@ -53,6 +53,8 @@ tasks:
       Generates the PKI under `infrastructure/elk/volumes/certs` using the same logic as the former `setup` container.
       Uses the `certs` compose profile (so it does not run on normal `infra:up`).
     dir: infrastructure/elk
+    env:
+      ELK_VOLUMES_BASE: "{{.REPO_ROOT}}/infrastructure/elk/volumes"
     cmds:
       - docker compose -f docker-compose.yml -f docker-compose-dns-override.yml down
       - docker compose --profile certs up --abort-on-container-exit setup
@@ -65,6 +67,8 @@ tasks:
       - task infra:up -- --force-recreate fleet
       - task infra:up -- --pull always
     dir: infrastructure/elk
+    env:
+      ELK_VOLUMES_BASE: "{{.REPO_ROOT}}/infrastructure/elk/volumes"
     cmds:
       - docker network inspect forensiq_shared >/dev/null 2>&1 || docker network create forensiq_shared
       - |
@@ -78,7 +82,7 @@ tasks:
     desc: Stop backend compose and remove shared Docker network (if present)
     summary: |
       usage: task infra:down
-    dir: infrastructure/backend
+    dir: infrastructure/elk
     cmds:
       - docker compose down
       - docker network rm forensiq_shared 2>/dev/null || true

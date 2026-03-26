@@ -18,8 +18,25 @@ services:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     depends_on:
       - minio
+    environment:
+      # Set to true once to delete and recreate the bucket with object lock (WORM).
+      # Required if the bucket existed before --with-lock (PutObject retention would fail).
+      MINIO_WORM_RECREATE_BUCKET: ${MINIO_WORM_RECREATE_BUCKET:-false}
+    # Object lock can only be enabled at bucket creation: mc mb --with-lock.
+    # Do not use --ignore-existing: it skips mb when a lock-less bucket exists (broken WORM).
     entrypoint: >
-      /bin/sh -c " until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 1; done; mc mb local/forensiq-cold-dev --ignore-existing; mc version enable local/forensiq-cold-dev; mc retention set local/forensiq-cold-dev/ --default governance 7d; "
+      /bin/sh -c "
+      set -e;
+      until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 1; done;
+      if [ \"$${MINIO_WORM_RECREATE_BUCKET}\" = \"true\" ]; then
+        mc rb --force local/forensiq-cold-dev 2>/dev/null || true;
+      fi;
+      if ! mc ls local/forensiq-cold-dev >/dev/null 2>&1; then
+        mc mb local/forensiq-cold-dev --with-lock;
+      fi;
+      mc version enable local/forensiq-cold-dev 2>/dev/null || true;
+      mc retention set local/forensiq-cold-dev/ --default governance 7d 2>/dev/null || true;
+      "
     networks:
       - forensiq_shared
 

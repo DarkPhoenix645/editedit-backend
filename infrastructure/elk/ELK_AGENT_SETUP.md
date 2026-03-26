@@ -24,6 +24,56 @@ enrolled agent uses (`/usr/share/elastic-agent/config/certs/ca/ca.crt`). It does
 **not** configure client certificates (no mTLS). **Re-run this after changing CA
 or hosts.**
 
+### Logstash → Elasticsearch API key (required for Fleet integrations)
+
+Fleet’s UI shows **Additional Logstash configuration required** until Logstash
+actually ships Agent events to Elasticsearch with **`data_stream`** and the
+**API key** from the output wizard. The `ingest` pipeline does that via
+`LOGSTASH_FLEET_API_KEY`.
+
+1. **Kibana** → **Fleet** → **Settings** → **Outputs** → open your **Logstash**
+   output (or create one with host `logstash:5044` and the same CA you use for
+   agents).
+2. Expand **Additional Logstash configuration required** → **Generate API key**
+   (or follow the in-product steps).
+3. Copy the key into `infrastructure/elk/.env` as **`LOGSTASH_FLEET_API_KEY=`**
+   (same format Elasticsearch expects: the `id:key` Base64 string from the UI).
+4. **Restart Logstash** (`docker compose restart logstash` from `infrastructure/elk`).
+
+Without this, integration data cannot index correctly; routing only to
+ForensIQ hot/cold pipelines also **breaks** Fleet (Elastic requires not mutating
+Agent document shape before ES — see
+[Logstash output](https://www.elastic.co/docs/reference/fleet/logstash-output)).
+
+**Greyed-out Logstash in a policy?** If the policy is the **Fleet Server** policy
+(or **APM**), Elastic **does not allow** Logstash as the default output for
+integrations or monitoring — use **Elasticsearch** for that policy. That
+restriction is separate from the API-key / pipeline steps above.
+
+### Fleet “Enable SSL” on the Logstash output — what the fields mean
+
+When **Enable SSL** is on, Kibana’s form matches Elastic’s **mTLS** tutorial
+([Configure SSL/TLS for the Logstash output](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections)):
+the in-product snippet uses `ssl_client_authentication => "required"`, so **client**
+cert + key are **required** in the UI (there is an open request to make them
+optional: [kibana#145266](https://github.com/elastic/kibana/issues/145266)).
+
+| UI field | What to paste (this repo after `task infra:certs:generate`) |
+|----------|---------------------------------------------------------------|
+| **Server SSL certificate authorities** | Full PEM of **`volumes/certs/ca/ca.crt`** — agents use this CA to **verify** the Logstash **server** cert. |
+| **Client SSL certificate** | Full PEM of **`volumes/certs/elastic_agent/elastic_agent.crt`** — shared client identity agents **present** to Logstash. |
+| **Client SSL certificate key** | PEM of **`elastic_agent.pkcs8.key`** if present, else **`elastic_agent.key`** — private key for the client cert (PKCS#8 preferred by Fleet). |
+
+`task elk:fleet:bootstrap` can push the same PEMs via the Fleet API so you do not
+have to paste them by hand, **after** the `elastic_agent` cert exists on disk.
+
+**ForensIQ mirror (duplicate stream):** The `ingest` pipeline **clones** each
+Fleet/integration event (`data_stream` or `[@metadata][_id]`): the **original**
+is indexed unchanged to Elasticsearch (Fleet contract); the **clone** is sent
+to the hot + cold pipelines for OCSF/cold HTTP. That doubles Logstash work and
+stores a second copy in `ocsf-logs-*` (and cold backend traffic) alongside the
+managed data streams — plan capacity accordingly.
+
 ---
 
 ## Part 1: Kibana UI – One-time setup

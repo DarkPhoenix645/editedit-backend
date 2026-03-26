@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -8,6 +9,15 @@ from botocore.client import BaseClient, Config
 from botocore.exceptions import ClientError
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+def _missing_object_lock_configuration(exc: ClientError) -> bool:
+    err = exc.response.get("Error", {})
+    code = err.get("Code", "")
+    msg = str(err.get("Message", ""))
+    return code == "InvalidRequest" and "ObjectLockConfiguration" in msg
 
 
 def get_worm_client() -> BaseClient:
@@ -31,17 +41,32 @@ def upload_to_worm(key: str, data: bytes, metadata: dict[str, str] | None = None
         "Metadata": metadata or {},
     }
 
-    # MinIO supports object lock APIs when bucket/versioning/object-lock are enabled.
+    # MinIO requires the bucket to be created with object lock (--with-lock). If the bucket
+    # predates that or was created without lock, PutObject with these keys fails.
+    lock_extra: dict[str, Any] = {}
     if settings.WORM_PROVIDER.lower() == "minio":
-        extra["ObjectLockMode"] = "GOVERNANCE"
-        extra["ObjectLockRetainUntilDate"] = datetime.now(timezone.utc) + timedelta(
+        lock_extra["ObjectLockMode"] = "GOVERNANCE"
+        lock_extra["ObjectLockRetainUntilDate"] = datetime.now(timezone.utc) + timedelta(
             days=settings.WORM_RETENTION_DAYS
         )
+        extra.update(lock_extra)
 
     try:
         resp = client.put_object(**extra)
     except ClientError as exc:
-        raise RuntimeError(f"WORM upload failed: {exc}") from exc
+        if lock_extra and _missing_object_lock_configuration(exc):
+            for k in lock_extra:
+                extra.pop(k, None)
+            logger.warning(
+                "WORM bucket missing Object Lock; uploading without retention headers. "
+                "Recreate the bucket with object lock (see infrastructure/backend/docker-compose.minio.yml)."
+            )
+            try:
+                resp = client.put_object(**extra)
+            except ClientError as exc2:
+                raise RuntimeError(f"WORM upload failed: {exc2}") from exc2
+        else:
+            raise RuntimeError(f"WORM upload failed: {exc}") from exc
 
     return str(resp.get("ETag", "")).strip('"')
 

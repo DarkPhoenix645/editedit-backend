@@ -23,6 +23,14 @@ services:
           (cd config/certs && "$$JAR" xf /tmp/certs.zip);
           rm -f /tmp/certs.zip config/certs/instances.yml;
         fi;
+        if [ ! -f config/certs/elastic_agent/elastic_agent.crt ]; then
+          printf "\\n" | bin/elasticsearch-certutil cert --silent --pem --out /tmp/ea.zip --name elastic_agent --ca-cert config/certs/ca/ca.crt --ca-key config/certs/ca/ca.key;
+          (cd config/certs && "$$JAR" xf /tmp/ea.zip);
+          rm -f /tmp/ea.zip;
+          if command -v openssl >/dev/null 2>&1; then
+            openssl pkcs8 -inform PEM -in config/certs/elastic_agent/elastic_agent.key -topk8 -nocrypt -outform PEM -out config/certs/elastic_agent/elastic_agent.pkcs8.key;
+          fi;
+        fi;
         chown -R 1000:1000 config/certs;
         echo "Certs ready.";
       '
@@ -124,7 +132,8 @@ services:
       es01: { condition: service_healthy }
     image: docker.elastic.co/logstash/logstash:${STACK_VERSION}
     ports:
-      - 5044:5044
+      - ${LOGSTASH_PORT:-5044}:5044
+      - ${LOGSTASH_MONITORING_PORT:-9600}:9600
     volumes:
       - certs:/usr/share/logstash/config/certs:ro
       - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
@@ -134,6 +143,8 @@ services:
     environment:
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
       - LOGSTASH_SHARED_SECRET=${LOGSTASH_SHARED_SECRET}
+      # From Fleet → Outputs → Logstash → Generate API key (minimal Logstash→ES privileges)
+      - LOGSTASH_FLEET_API_KEY=${LOGSTASH_FLEET_API_KEY}
 
   fleet:
     depends_on:
@@ -141,7 +152,7 @@ services:
     image: docker.elastic.co/elastic-agent/elastic-agent:${STACK_VERSION}
     user: root
     ports:
-      - ${FLEET_PORT}:8220
+      - ${FLEET_PORT:-8220}:8220
     volumes:
       - certs:/usr/share/elastic-agent/config/certs
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -152,10 +163,14 @@ services:
       - FLEET_SERVER_ENABLE=1
       - FLEET_SERVER_HOST=0.0.0.0
       - FLEET_SERVER_POLICY_ID=fleet-server-policy
+      - FLEET_SERVER_ELASTICSEARCH_HOST=https://es01:9200
+      - FLEET_SERVER_ELASTICSEARCH_CA=/usr/share/elastic-agent/config/certs/ca/ca.crt
       - ELASTICSEARCH_HOST=https://es01:9200
       - ELASTICSEARCH_USERNAME=elastic
       - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD}
       - ELASTICSEARCH_CA=/usr/share/elastic-agent/config/certs/ca/ca.crt
+      # Default bootstrap wait is 2m; first policy sync + ES output test can exceed that on cold start.
+      - FLEET_SERVER_TIMEOUT=10m
       # Use the CA-signed cert the setup container generated for the "fleet" hostname.
       # Without these, Fleet Server auto-generates a self-signed cert that agents won't trust.
       - FLEET_SERVER_CERT=/usr/share/elastic-agent/config/certs/fleet/fleet.crt
@@ -167,23 +182,24 @@ services:
       - KIBANA_FLEET_HOST=https://kib01:5601
       - KIBANA_FLEET_SETUP=1
 
-# Volumes mounted and bound to ./volumes/ subdir
+# Volumes mounted and bound to an absolute host path.
+# `ELK_VOLUMES_BASE` is injected by Taskfile (see Taskfile.yml).
 volumes:
   certs:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${PWD}/volumes/certs
+      device: ${ELK_VOLUMES_BASE:-./volumes}/certs
   esdata:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${PWD}/volumes/esdata
+      device: ${ELK_VOLUMES_BASE:-./volumes}/esdata
   lsdata:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${PWD}/volumes/lsdata
+      device: ${ELK_VOLUMES_BASE:-./volumes}/lsdata

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Idempotent Fleet outputs: Elasticsearch (default) + Logstash with server-auth TLS only
-# (CA verify; no client cert / mTLS). Paths are agent-container paths (see host-agent:enroll).
+# Idempotent Fleet outputs: Elasticsearch (default) + Logstash with TLS (Fleet UI model):
+# agents verify Logstash with CA + present a shared client cert (mTLS). PEMs come from
+# volumes/certs/ after task infra:certs:generate (elastic_agent client cert + CA).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -84,19 +85,21 @@ post_output() {
 
 demote_other_es_defaults() {
   local keep_name="$1"
+  # Prefer demoting only non–preconfigured outputs; Fleet may omit flags on list, so each PUT can still fail.
   local ids
   ids=$(get_outputs_json | jq -r --arg k "$keep_name" '
     .items[]?
     | select(.type == "elasticsearch" and .is_default == true and .name != $k)
+    | select((.is_preconfigured // false) | not)
     | .id
   ')
   local oid
   for oid in ${ids}; do
     [ -z "${oid}" ] && continue
-    local body
-    body=$(get_output_item "${oid}" | jq '.item | .is_default = false | .is_default_monitoring = false')
     echo "Demoting default on output id=${oid} (so ${keep_name} can be default)"
-    put_output "${oid}" "${body}"
+    if ! put_output_merged "${oid}" "$(jq -n '{is_default: false, is_default_monitoring: false}')"; then
+      echo "WARN: could not demote output id=${oid} (read-only or Fleet-managed). Continuing."
+    fi
   done
 }
 
@@ -107,7 +110,8 @@ ssl.certificate_authorities:
 EOF
 )"
 
-CONFIG_LS="$(cat <<'EOF'
+# Used only if client cert files are missing (legacy); prefer ssl{} in payload_ls with inline PEMs.
+CONFIG_LS_FALLBACK="$(cat <<'EOF'
 ssl.verification_mode: full
 ssl.certificate_authorities:
   - /usr/share/elastic-agent/config/certs/ca/ca.crt
@@ -133,19 +137,51 @@ payload_es() {
 
 payload_ls() {
   local id="${1:-}"
-  jq -n \
-    --arg id "${id}" \
-    --arg name "Logstash Ingest Pipeline" \
-    --arg cfg "${CONFIG_LS}" \
-    '{
-      name: $name,
-      type: "logstash",
-      hosts: ["logstash:5044"],
-      is_default: false,
-      is_default_monitoring: false,
-      config_yaml: $cfg
-    }
-    + (if ($id | length) > 0 then {id: $id} else {} end)'
+  local ca_path crt_path key_path
+  ca_path="${ELK_DIR}/volumes/certs/ca/ca.crt"
+  crt_path="${ELK_DIR}/volumes/certs/elastic_agent/elastic_agent.crt"
+  key_path="${ELK_DIR}/volumes/certs/elastic_agent/elastic_agent.pkcs8.key"
+  if [ ! -f "${key_path}" ] && [ -f "${ELK_DIR}/volumes/certs/elastic_agent/elastic_agent.key" ]; then
+    key_path="${ELK_DIR}/volumes/certs/elastic_agent/elastic_agent.key"
+  fi
+  if [ -f "${ca_path}" ] && [ -f "${crt_path}" ] && [ -f "${key_path}" ]; then
+    jq -n \
+      --arg id "${id}" \
+      --arg name "Logstash Ingest Pipeline" \
+      --rawfile ca "${ca_path}" \
+      --rawfile cert "${crt_path}" \
+      --rawfile clientkey "${key_path}" \
+      '{
+        name: $name,
+        type: "logstash",
+        hosts: ["logstash:5044"],
+        is_default: false,
+        is_default_monitoring: false,
+        config_yaml: "",
+        ssl: {
+          certificate_authorities: [$ca],
+          certificate: $cert,
+          key: $clientkey,
+          verification_mode: "full"
+        }
+      }
+      + (if ($id | length) > 0 then {id: $id} else {} end)'
+  else
+    echo "WARN: Missing ${crt_path} or client key (or ${ca_path}). Using path-based config_yaml only — generate certs (task infra:certs:generate) and re-run, or paste PEMs in Fleet UI." >&2
+    jq -n \
+      --arg id "${id}" \
+      --arg name "Logstash Ingest Pipeline" \
+      --arg cfg "${CONFIG_LS_FALLBACK}" \
+      '{
+        name: $name,
+        type: "logstash",
+        hosts: ["logstash:5044"],
+        is_default: false,
+        is_default_monitoring: false,
+        config_yaml: $cfg
+      }
+      + (if ($id | length) > 0 then {id: $id} else {} end)'
+  fi
 }
 
 upsert_es() {
@@ -157,7 +193,12 @@ upsert_es() {
   else
     demote_other_es_defaults "Elasticsearch Direct"
     echo "Creating Fleet output: Elasticsearch Direct"
-    post_output "$(payload_es "")"
+    if post_output "$(payload_es "")"; then
+      :
+    else
+      echo "WARN: Could not create output as default (another preconfigured default may exist). Creating non-default — set default in Fleet → Settings → Outputs."
+      post_output "$(payload_es "" | jq '.is_default = false | .is_default_monitoring = false')"
+    fi
   fi
 }
 
@@ -178,3 +219,4 @@ wait_kibana
 upsert_es
 upsert_ls
 echo "Fleet outputs OK. Assign policies to Logstash in Kibana if needed."
+echo "Set LOGSTASH_FLEET_API_KEY in .env (Fleet → Outputs → Logstash → Generate API key) and restart logstash — see ELK_AGENT_SETUP.md."
