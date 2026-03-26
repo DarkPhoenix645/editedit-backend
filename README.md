@@ -16,17 +16,19 @@
 4. Start the stack: `task infra:up`
 
 5. **Fleet outputs (git-stable, UI-editable):** After Kibana is up, create the
-   default Elasticsearch output and the Logstash ingest output with **server-auth
-   TLS only** (agents verify Logstash’s server cert using the stack CA; no mTLS):
+   default Elasticsearch output and the Logstash ingest output with full TLS,
+   including Logstash mTLS (agents verify server cert and present client cert):
 
    ```bash
    task elk:fleet:bootstrap
    ```
 
    Uses `elastic` + `ELASTIC_PASSWORD` from `infrastructure/elk/.env`, talks to
-   `https://localhost:${KIBANA_PORT:-5601}`, and sets `ssl.verification_mode` to
-   `certificate` for Elasticsearch and `full` for Logstash (SAN includes `logstash`
-   in the generated PKI). Override `KIBANA_URL` if Kibana is not on localhost.
+   `https://localhost:${KIBANA_PORT:-5601}`, sets `ssl.verification_mode` to
+   `certificate` for Elasticsearch and configures Logstash output SSL with: CA +
+   client certificate + client key (from
+   `infrastructure/elk/volumes/certs/elastic_agent/*`) and verification mode
+   `full`. Override `KIBANA_URL` if Kibana is not on localhost.
 
 6. **Fleet and Elastic Agent:** For step-by-step Kibana UI configuration (Fleet
    Server, agent policies, enrollment tokens) and enrolling a Docker agent with
@@ -74,15 +76,21 @@
 
 3. Run with:
    ```bash
-   docker compose up --build
+   task backend:up
    ```
 
 ## MacOS Note Regarding Setup
-1. MacOS log collection is problematic, therefore we use synthetic logs for dev purposes.
 
-2. Follow the same steps as usual and then utilise the `task host-agent:synthetic:inject` to inject logs in the container, the logs are stored at `/var/log/dev/synthetic.log`, this needs to be added to the Agent Policy under the System Integration
+1. MacOS log collection is problematic, therefore we use synthetic logs for dev
+   purposes.
 
-3. This can then be queried with the following in the Kibana Dev Tools
+2. Follow the same steps as usual and then utilise the
+   `task host-agent:synthetic:inject` to inject logs in the container, the logs
+   are stored at `/var/log/dev/synthetic.log`, this needs to be added to the
+   Agent Policy under the System Integration
+
+3. This can then be queried in **Kibana > Dev Tools**:
+
    ```json
    GET logs-*/_search
    {
@@ -101,7 +109,7 @@
    }
    ```
 
-4. The logs should be saved under the dataset `event.dataset: system.syslog` 
+4. The logs should be saved under the dataset `event.dataset: system.syslog`
 
 ## ForensIQ v2.1 Hot/Cold Setup
 
@@ -120,25 +128,26 @@
 2. Start MinIO (local WORM)
 
    ```bash
-   docker compose -f infrastructure/backend/docker-compose.minio.yml up -d
+   task minio:up
    ```
 
    Console: [http://localhost:9001](http://localhost:9001) (`minioadmin` /
    `minioadmin`)
 
 3. Kibana UI verification
-   - `Stack Management -> Index Management`: confirm `ocsf-logs-*` exists and
-     doc count grows.
-   - `Stack Management -> Index Lifecycle Policies`: confirm `ocsf-logs-7d`.
-   - `Discover`: use/create data view `ocsf-logs-*`, verify
+   - **Kibana > Stack Management > Index Management**: confirm `ocsf-logs-*`
+     exists and doc count grows.
+   - **Kibana > Stack Management > Index Lifecycle Policies**: confirm
+     `ocsf-logs-7d`.
+   - **Kibana > Discover**: use/create data view `ocsf-logs-*`, verify
      `forensiq.event_fingerprint`, `forensiq.trust_tier`.
-   - `Dev Tools`:
+   - **Kibana > Dev Tools**:
 
    ```http
    GET _ilm/explain/ocsf-logs-*
    ```
 
-4. End-to-end smoke commands
+4. E2E smoke commands
 
    Publish a test log on the enrolled agent host:
 
@@ -176,7 +185,7 @@
    ```
 
 5. Acceptance criteria:
-   - Event appears in Kibana Discover (`ocsf-logs-*`).
+   - Event appears in **Kibana > Discover** (`ocsf-logs-*`).
    - Same fingerprint is present in `hot_cold_traces`.
    - A corresponding sealed block exists in `sealed_blocks`.
    - Object exists in WORM bucket.

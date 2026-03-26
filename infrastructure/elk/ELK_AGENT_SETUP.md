@@ -3,26 +3,31 @@
 End-to-end steps to configure Fleet in the Kibana UI and enroll a Dockerized
 Elastic Agent for log collection using the Taskfile command.
 
-**Assumptions:** ELK stack is running (Fleet Server healthy), Kibana reachable
-at `https://localhost:5601` (or your host/port). Stack started from
-`infrastructure/elk` so the Docker network is `elk_default`.
+**Assumptions:**
+
+1. ELK stack is running
+2. Fleet Server healthy
+3. Kibana reachable at `https://localhost:5601` (or your host/port).
+4. Stack started from `infrastructure/elk` so the Docker network is
+   `elk_default`.
+5. `jq` installed
+6. `infrastructure/elk/.env` configured
 
 ---
 
 ## Part 0: Bootstrap Fleet outputs (recommended)
-
-From the **repository root** (with `jq` installed and `infrastructure/elk/.env`
-configured):
 
 ```bash
 task elk:fleet:bootstrap
 ```
 
 This creates or updates **Elasticsearch Direct** and **Logstash Ingest
-Pipeline** outputs with TLS **server verification** using the same CA path the
-enrolled agent uses (`/usr/share/elastic-agent/config/certs/ca/ca.crt`). It does
-**not** configure client certificates (no mTLS). **Re-run this after changing CA
-or hosts.**
+Pipeline** outputs with full TLS. For Logstash output it configures **mTLS**
+using the same CA path the enrolled agent uses
+(`/usr/share/elastic-agent/config/certs/ca/ca.crt`) plus shared client
+certificate/key from `volumes/certs/elastic_agent/*`.
+
+**Re-run this after changing CA/certs or hosts.**
 
 ### Logstash → Elasticsearch API key (required for Fleet integrations)
 
@@ -31,25 +36,22 @@ actually ships Agent events to Elasticsearch with **`data_stream`** and the
 **API key** from the output wizard. The `ingest` pipeline does that via
 `LOGSTASH_FLEET_API_KEY`.
 
-1. **Kibana** → **Fleet** → **Settings** → **Outputs** → open your **Logstash**
-   output (or create one with host `logstash:5044` and the same CA you use for
-   agents).
-2. Expand **Additional Logstash configuration required** → **Generate API key**
-   (or follow the in-product steps).
-3. Copy the key into `infrastructure/elk/.env` as **`LOGSTASH_FLEET_API_KEY=`**
-   (same format Elasticsearch expects: the `id:key` Base64 string from the UI).
-4. **Restart Logstash** (`docker compose restart logstash` from
-   `infrastructure/elk`).
+1. Edit **Kibana > Fleet > Settings > Outputs > Your Logstash Output**.
+2. Copy API key generated from **Additional Logstash configuration required >
+   Generate API key** into `infrastructure/elk/.env` as
+   `LOGSTASH_FLEET_API_KEY=<key>`
+3. Recreate Logstash so container env is refreshed:
+   `task infra:logstash:recreate` (from repo root).
 
 Without this, integration data cannot index correctly; routing only to ForensIQ
 hot/cold pipelines also **breaks** Fleet (Elastic requires not mutating Agent
 document shape before ES — see
 [Logstash output](https://www.elastic.co/docs/reference/fleet/logstash-output)).
 
-**Greyed-out Logstash in a policy?** If the policy is the **Fleet Server**
-policy (or **APM**), Elastic **does not allow** Logstash as the default output
-for integrations or monitoring — use **Elasticsearch** for that policy. That
-restriction is separate from the API-key / pipeline steps above.
+**Greyed-out Logstash/output controls in policy config?** In many fresh dev
+setups, click **Start free trial** in Kibana first. If still greyed out, check
+policy type: Fleet Server/APM policies cannot use Logstash as the default output
+for integrations or monitoring; use Elasticsearch for those policy types.
 
 ### Fleet “Enable SSL” on the Logstash output — what the fields mean
 
@@ -83,11 +85,10 @@ managed data streams — plan capacity accordingly.
 
 ### 1.1 Confirm Fleet Server and output
 
-1. Open **Kibana** → **Management** (gear) → **Fleet** (or **Fleet** from the
-   main menu).
+1. Open **Kibana > Fleet**.
 2. Open the **Agents** tab. Confirm **Fleet Server is Healthy** and at least one
    Fleet Server agent is **Healthy**.
-3. Open the **Settings** tab (or **Fleet** → **Settings**).
+3. Open **Kibana > Fleet > Settings**.
 4. Under **Fleet Server host**, confirm the default host has URL
    **`https://fleet:8220`** (used by agents in the same Docker network). Do not
    change this for Docker agents on `elk_default`.
@@ -100,7 +101,7 @@ managed data streams — plan capacity accordingly.
 
 ### 1.2 Create an agent policy for host/log collection
 
-1. Go to **Fleet** → **Agent policies**.
+1. Go to **Kibana > Fleet > Agent policies**.
 2. Click **Create agent policy**.
 3. Set:
    - **Name:** `Host Log Collection` (or e.g. `ForensIQ Host Agent`).
@@ -109,13 +110,13 @@ managed data streams — plan capacity accordingly.
      (adds the System integration).
 4. Click **Create agent policy**. Note the **Agent policy ID** (e.g.
    `host-log-policy` or a generated ID) for reference.
-5. (Optional) Click the new policy → **Add integration**. Add **System** if not
+5. (Optional) In **Kibana > Fleet > Agent policies > Host Log Collection > Add integration**, add **System** if not
    already there; configure log streams (e.g. paths like `/var/log/*.log`) and
    metrics as needed. Save.
 
 ### 1.3 Create an enrollment token for the policy
 
-1. Go to **Fleet** → **Enrollment tokens**.
+1. Go to **Kibana > Fleet > Enrollment tokens**.
 2. Click **Create enrollment token**.
 3. Set:
    - **Name:** e.g. `Host Agent Docker`.
@@ -130,7 +131,7 @@ managed data streams — plan capacity accordingly.
 
 ### 2.1 Open the Add agent flow
 
-1. Go to **Fleet** → **Agents**.
+1. Go to **Kibana > Fleet > Agents**.
 2. Click **Add agent**.
 
 ### 2.2 Enroll in Fleet and get the token
@@ -164,12 +165,6 @@ and the ELK stack was started from `infrastructure/elk`):
 task host-agent:enroll -- <ENROLLMENT_TOKEN>
 ```
 
-Example:
-
-```bash
-task host-agent:enroll -- eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
-```
-
 - **Network:** The task uses `elk_default` (see Taskfile vars: `NETWORK`,
   `CERTS_PATH`). If you started the stack from the repo root with
   `docker compose -f infrastructure/elk/docker-compose.yml up -d`, the network
@@ -183,7 +178,7 @@ task host-agent:enroll -- eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
 
 ### 2.5 Verify in Fleet
 
-1. In **Fleet** → **Agents**, wait up to about a minute.
+1. In **Kibana > Fleet > Agents**, wait up to about a minute.
 2. You should see a new agent with status **Healthy**, policy **Host Log
    Collection** (or your policy name), and **Last activity** updating.
 3. If the agent stays **Unhealthy**, check:
@@ -197,13 +192,13 @@ task host-agent:enroll -- eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
 
 ## Policy and settings summary (for Taskfile Docker agent)
 
-| Item                 | Value                                                                                                                                                                       |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Agent policy**     | One policy for host log collection (e.g. "Host Log Collection") with **Collect system logs and metrics** enabled (System integration).                                      |
-| **Fleet Server URL** | `https://fleet:8220` (agents must be on same Docker network as Fleet).                                                                                                      |
-| **Enrollment**       | Use an enrollment token tied to that policy.                                                                                                                                |
-| **Output**           | Default **Elasticsearch Direct** with CA path `/usr/share/elastic-agent/config/certs/ca/ca.crt` (for the Fleet container; your Docker agent gets output config from Fleet). |
-| **Agent container**  | Image `docker.elastic.co/elastic-agent/elastic-agent:9.3.1`, root, network `elk_default`, certs at `/certs/ca/ca.crt` via `FLEET_CA` and `ELASTICSEARCH_CA`.                |
+| Item                 | Value                                                                                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Agent policy**     | One policy for host log collection (e.g. "Host Log Collection") with **Collect system logs and metrics** enabled (System integration).                                                           |
+| **Fleet Server URL** | `https://fleet:8220` (agents must be on same Docker network as Fleet).                                                                                                                           |
+| **Enrollment**       | Use an enrollment token tied to that policy.                                                                                                                                                     |
+| **Output**           | Default **Elasticsearch Direct** (CA path `/usr/share/elastic-agent/config/certs/ca/ca.crt`) plus optional **Logstash Ingest Pipeline** output configured for mTLS (CA + agent client cert/key). |
+| **Agent container**  | Image `docker.elastic.co/elastic-agent/elastic-agent:9.3.1`, root, network `elk_default`, certs at `/certs/ca/ca.crt` via `FLEET_CA` and `ELASTICSEARCH_CA`.                                     |
 
 ---
 
@@ -212,10 +207,10 @@ task host-agent:enroll -- eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
 If you want this agent to send data via Logstash (e.g. for OCSF/trust
 classification) instead of directly to Elasticsearch:
 
-1. **Fleet** → **Settings** → **Outputs**. Ensure an output of type **Logstash**
+1. In **Kibana > Fleet > Settings > Outputs**, ensure an output of type **Logstash**
    exists (e.g. **Logstash Ingest Pipeline**) with host `logstash:5044`.
-2. **Fleet** → **Agent policies** → your policy (e.g. **Host Log Collection**) →
-   **Settings** or **Output**.
+2. In **Kibana > Fleet > Agent policies > Host Log Collection > Settings (or Output)**,
+   select the policy output section.
 3. Set the policy’s **Output** to that Logstash output (instead of Elasticsearch
    Direct). Save.
 4. Redeploy or wait for the agent to pick up the new output.

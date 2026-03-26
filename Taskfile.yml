@@ -105,6 +105,17 @@ tasks:
       - docker compose down
       - docker network rm forensiq_shared 2>/dev/null || true
 
+  infra:logstash:recreate:
+    desc: Recreate only Logstash to reload env vars (e.g., Fleet API key)
+    summary: |
+      usage: task infra:logstash:recreate
+      Recreates logstash container without touching dependent services.
+    dir: infrastructure/elk
+    env:
+      ELK_VOLUMES_BASE: "{{.REPO_ROOT}}/infrastructure/elk/volumes"
+    cmds:
+      - docker compose up -d --force-recreate --no-deps logstash
+
   # Enroll a Docker agent to ELK Fleet (infrastructure/elk).
   host-agent:enroll:
     desc: Enroll Elastic Agent (Docker) to ELK stack Fleet for log collection
@@ -239,11 +250,11 @@ tasks:
       - docker logs -f elastic-agent-host
 
   elk:fleet:bootstrap:
-    desc: Create/update Fleet Elasticsearch + Logstash outputs (server-auth TLS)
+    desc: Create/update Fleet Elasticsearch + Logstash outputs (Logstash mTLS)
     summary: |
       usage: task elk:fleet:bootstrap
       Requires ELK stack running, infrastructure/elk/.env, and jq on PATH.
-      Sets Logstash TLS to verify server cert with CA only (no mTLS).
+      Configures Logstash output with full mTLS (CA + client cert + client key).
       Override Kibana URL: task elk:fleet:bootstrap KIBANA_URL=https://other:5601
     dir: infrastructure/elk
     preconditions:

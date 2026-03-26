@@ -133,6 +133,8 @@ services:
     depends_on:
       es01: { condition: service_healthy }
     image: docker.elastic.co/logstash/logstash:${STACK_VERSION}
+    env_file:
+      - ./.env
     ports:
       - ${LOGSTASH_PORT:-5044}:5044
       - ${LOGSTASH_MONITORING_PORT:-9600}:9600
@@ -146,7 +148,8 @@ services:
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
       - LOGSTASH_SHARED_SECRET=${LOGSTASH_SHARED_SECRET}
       # From Fleet → Outputs → Logstash → Generate API key (minimal Logstash→ES privileges)
-      - LOGSTASH_FLEET_API_KEY=${LOGSTASH_FLEET_API_KEY}
+      # After changing this value in .env, recreate logstash container (restart is not enough).
+      - LOGSTASH_FLEET_API_KEY
 
   fleet:
     depends_on:

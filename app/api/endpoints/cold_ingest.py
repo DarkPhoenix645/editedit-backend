@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.cold_ingest import ColdIngestResponse
-from app.services.cold_stack import process_cold_events
+from app.services.sealing_service import process_cold_events
 
 router = APIRouter()
 
