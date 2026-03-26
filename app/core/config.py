@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     ES_PASSWORD: str = ""
     ES_CA_CERT_PATH: str = "/usr/share/logstash/config/certs/ca/ca.crt"
     OCSF_INDEX_PATTERN: str = "ocsf-logs-*"
+    COLDSTACK_SIGNING_PRIVATE_KEY_B64: str = ""
+    COLDSTACK_SIGNING_KEY_ID: str = "cold-stack-dev"
+    COLDSTACK_STORAGE_URI_PREFIX: str = "postgresql://cold_stored_blocks"
+    COLDSTACK_TIMESTAMP_AUTHORITY: str = "backend-local"
+    COLDSTACK_MAX_CLOCK_SKEW_MS: int = 500
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
