@@ -14,6 +14,13 @@ vars:
   STACK_VERSION: 9.3.1
   NETWORK: elk_default
   CERTS_PATH: infrastructure/elk/volumes/certs
+  # Used to avoid bind-mounted volume permission drift when running cert generation containers.
+  ELK_HOST_UID:
+    sh: id -u
+  ELK_HOST_GID:
+    sh: id -g
+  SUDO:
+    sh: 'command -v sudo >/dev/null 2>&1 && echo sudo || echo ""'
   REPO_ROOT:
     sh: pwd
   DEV_LOGS_PATH: infrastructure/elk/devlogs
@@ -33,18 +40,26 @@ tasks:
     summary: |
       usage: task infra:mkdir
     cmds:
-      - mkdir -p infrastructure/elk/volumes/certs/*
-      - mkdir -p infrastructure/elk/volumes/esdata/*
-      - mkdir -p infrastructure/elk/volumes/lsdata/*
+      - mkdir -p infrastructure/elk/volumes/certs
+      - mkdir -p infrastructure/elk/volumes/esdata
+      - mkdir -p infrastructure/elk/volumes/lsdata
 
   infra:clean:
     desc: Clean the volumes made during setup and used by ES / LS
     summary: |
       usage: task infra:clean
     cmds:
-      - rm -rf infrastructure/elk/volumes/certs/*
-      - rm -rf infrastructure/elk/volumes/esdata/*
-      - rm -rf infrastructure/elk/volumes/lsdata/*
+      - "{{.SUDO}} chown -R {{.ELK_HOST_UID}}:{{.ELK_HOST_GID}} infrastructure/elk/volumes/certs 2>/dev/null || true"
+      - "{{.SUDO}} chmod -R u+rwX,go+rX infrastructure/elk/volumes/certs 2>/dev/null || true"
+      - "{{.SUDO}} rm -rf infrastructure/elk/volumes/certs/*"
+
+      - "{{.SUDO}} chown -R {{.ELK_HOST_UID}}:{{.ELK_HOST_GID}} infrastructure/elk/volumes/esdata 2>/dev/null || true"
+      - "{{.SUDO}} chmod -R u+rwX,go+rX infrastructure/elk/volumes/esdata 2>/dev/null || true"
+      - "{{.SUDO}} rm -rf infrastructure/elk/volumes/esdata/*"
+
+      - "{{.SUDO}} chown -R {{.ELK_HOST_UID}}:{{.ELK_HOST_GID}} infrastructure/elk/volumes/lsdata 2>/dev/null || true"
+      - "{{.SUDO}} chmod -R u+rwX,go+rX infrastructure/elk/volumes/lsdata 2>/dev/null || true"
+      - "{{.SUDO}} rm -rf infrastructure/elk/volumes/lsdata/*"
 
   infra:certs:generate:
     desc: Generate Elasticsearch/TLS certs (one-shot)
@@ -55,9 +70,12 @@ tasks:
     dir: infrastructure/elk
     env:
       ELK_VOLUMES_BASE: "{{.REPO_ROOT}}/infrastructure/elk/volumes"
+      ELK_HOST_UID: "{{.ELK_HOST_UID}}"
+      ELK_HOST_GID: "{{.ELK_HOST_GID}}"
     cmds:
       - docker compose -f docker-compose.yml -f docker-compose-dns-override.yml down
-      - docker compose --profile certs up --abort-on-container-exit setup
+      # Force-recreate to avoid stale network attachment errors after `down`.
+      - docker compose --profile certs up --abort-on-container-exit --force-recreate setup
 
   infra:up:
     desc: Start ELK stack (stable certs; applies DNS override)
@@ -235,6 +253,23 @@ tasks:
         msg: "jq is required (e.g. pacman -S jq / apt install jq)."
     cmds:
       - bash scripts/fleet-bootstrap.sh
+
+  elk:fleet:agent:setup:
+    desc: Create/verify ForensIQ Fleet policy and print enrollment token
+    summary: |
+      usage: task elk:fleet:agent:setup
+      optional env:
+        FORENSIQ_POLICY_NAME="ForensIQ Host Log Collection"
+        FORENSIQ_TOKEN_NAME="ForensIQ Host Agent Token"
+        FORENSIQ_USE_LOGSTASH_OUTPUT=true
+    dir: infrastructure/elk
+    preconditions:
+      - sh: "test -f volumes/certs/ca/ca.crt"
+        msg: "ELK certs missing. Run `task infra:certs:generate` first."
+      - sh: "command -v jq >/dev/null"
+        msg: "jq is required (e.g. pacman -S jq / apt install jq)."
+    cmds:
+      - bash scripts/fleet-agent-setup.sh
 
   elk:ilm:bootstrap:
     desc: Create/update OCSF ILM policy and index template

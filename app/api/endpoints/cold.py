@@ -12,7 +12,11 @@ from app.db.models import HotColdTrace, LogSource
 from app.db.session import get_db
 from app.schemas.ingest import ColdIngestResponse
 from app.services.ocsf_rederive_v1_0 import apply_ocsf_mapping_v1_0
-from app.services.sealing_service import compute_fingerprint, seal_event_batch
+from app.services.sealing_service import (
+    compute_fingerprint,
+    compute_fingerprint_values_only,
+    seal_event_batch,
+)
 
 router = APIRouter()
 
@@ -36,10 +40,27 @@ def ingest_cold_batch(
     )
     source = db.query(LogSource).filter(LogSource.agent_id == source_agent).first()
     if source is None:
+        # Cold ingest log source defaults are only used as coarse trust metadata.
+        # Trust tier values themselves are driven per-event by forensiq.trust_tier.
+        dataset = events[0].get("event", {}).get("dataset") or events[0].get("dataset") or ""
+        static_trust_level = "os"
+        if dataset.startswith("application."):
+            static_trust_level = "application"
+        elif dataset.startswith("cloud."):
+            static_trust_level = "cloud"
+        elif dataset.startswith("iot."):
+            static_trust_level = "iot"
+        elif dataset.startswith("kernel.") or dataset.startswith("system.kernel"):
+            static_trust_level = "kernel"
+        elif dataset.startswith("iam.") or dataset.startswith("identity.") or dataset == "system.auth":
+            static_trust_level = "iam"
+        elif dataset.startswith("system.auth"):
+            static_trust_level = "iam"
+
         source = LogSource(
             agent_id=source_agent,
             source_name=source_agent,
-            static_trust_level="T2",
+            static_trust_level=static_trust_level,
             dynamic_trust_score=1.0,
             provider_type="elastic-agent",
             os_type=str(events[0].get("host", {}).get("os", {}).get("name", "unknown")),
@@ -49,7 +70,25 @@ def ingest_cold_batch(
 
     for event in events:
         fq = event.setdefault("forensiq", {})
-        fq["event_fingerprint"] = fq.get("event_fingerprint") or compute_fingerprint(event)
+        expected_fingerprint = compute_fingerprint(event)
+        legacy_expected_fingerprint = compute_fingerprint_values_only(event)
+        incoming_fingerprint = fq.get("event_fingerprint")
+        if incoming_fingerprint and incoming_fingerprint not in {
+            expected_fingerprint,
+            legacy_expected_fingerprint,
+        }:
+            fq["fingerprint_verification"] = "mismatch"
+            fq["expected_fingerprint"] = expected_fingerprint
+            fq["legacy_expected_fingerprint"] = legacy_expected_fingerprint
+        else:
+            fq["fingerprint_verification"] = "ok"
+        fq["event_fingerprint"] = incoming_fingerprint or expected_fingerprint
+        event.setdefault("event", {})
+        if not event["event"].get("id"):
+            event["event"]["id"] = event.get("event_id") or fq["event_fingerprint"]
+        if not event.get("event_id"):
+            event["event_id"] = event["event"]["id"]
+        event["event"]["hash"] = fq["event_fingerprint"]
 
     sealed = seal_event_batch(db=db, source_id=str(source.id), events=events)
 

@@ -20,18 +20,50 @@ def canonical_event_bytes(event: dict[str, Any]) -> bytes:
     return json.dumps(event, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
+def _ls_str(value: Any) -> str:
+    # Logstash fingerprint treats missing/nil values as empty strings.
+    return "" if value is None else str(value)
+
+
 def compute_fingerprint(event: dict[str, Any]) -> str:
-    host_name = (
-        event.get("host", {}).get("name")
-        or event.get("host.name")
-        or ""
+    event_fields = event.get("event", {})
+    host_name = event.get("host", {}).get("name") or ""
+    dataset = event_fields.get("dataset") or ""
+    event_id = event_fields.get("id") or ""
+    # Match Logstash fingerprint filter behavior with:
+    # source => ["@timestamp","message","[host][name]","[event][dataset]","[event][id]"]
+    # concatenate_sources => true
+    # The plugin concatenates field names and values in order.
+    source = "".join(
+        (
+            "@timestamp",
+            _ls_str(event.get("@timestamp", "")),
+            "message",
+            _ls_str(event.get("message", "")),
+            "[host][name]",
+            _ls_str(host_name),
+            "[event][dataset]",
+            _ls_str(dataset),
+            "[event][id]",
+            _ls_str(event_id),
+        )
     )
-    source = "|".join(
-        [
-            str(event.get("@timestamp", "")),
-            str(event.get("message", "")),
-            str(host_name),
-        ]
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
+def compute_fingerprint_values_only(event: dict[str, Any]) -> str:
+    event_fields = event.get("event", {})
+    host_name = event.get("host", {}).get("name") or ""
+    dataset = event_fields.get("dataset") or ""
+    event_id = event_fields.get("id") or ""
+    source = "".join(
+        (
+            _ls_str(event.get("@timestamp", "")),
+            _ls_str(event.get("message", "")),
+            _ls_str(host_name),
+            _ls_str(dataset),
+            _ls_str(event_id),
+        )
     )
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 

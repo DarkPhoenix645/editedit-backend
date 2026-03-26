@@ -32,6 +32,8 @@
    Server, agent policies, enrollment tokens) and enrolling a Docker agent with
    the Taskfile, see
    **[ELK Agent Setup — Fleet & Add Agent](infrastructure/elk/ELK_AGENT_SETUP.md)**.
+   For one-command Fleet policy + token bootstrap aligned to ForensIQ pipelines:
+   `task elk:fleet:agent:setup`
 
 7. Enroll a host agent (after getting an enrollment token from Kibana Fleet):
    install [Task](https://taskfile.dev/docs/installation), then from project

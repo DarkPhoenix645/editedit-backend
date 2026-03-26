@@ -49,4 +49,4 @@ def test_ocsf_rederivation_reproducible() -> None:
     out_1 = apply_ocsf_mapping_v1_0(raw)
     out_2 = apply_ocsf_mapping_v1_0(raw)
     assert out_1 == out_2
-    assert out_1["forensiq"]["trust_tier"] == "T1"
+    assert out_1["forensiq"]["trust_tier"] == "iam"

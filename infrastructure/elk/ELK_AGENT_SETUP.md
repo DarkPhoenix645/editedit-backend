@@ -38,39 +38,42 @@ actually ships Agent events to Elasticsearch with **`data_stream`** and the
    (or follow the in-product steps).
 3. Copy the key into `infrastructure/elk/.env` as **`LOGSTASH_FLEET_API_KEY=`**
    (same format Elasticsearch expects: the `id:key` Base64 string from the UI).
-4. **Restart Logstash** (`docker compose restart logstash` from `infrastructure/elk`).
+4. **Restart Logstash** (`docker compose restart logstash` from
+   `infrastructure/elk`).
 
-Without this, integration data cannot index correctly; routing only to
-ForensIQ hot/cold pipelines also **breaks** Fleet (Elastic requires not mutating
-Agent document shape before ES — see
+Without this, integration data cannot index correctly; routing only to ForensIQ
+hot/cold pipelines also **breaks** Fleet (Elastic requires not mutating Agent
+document shape before ES — see
 [Logstash output](https://www.elastic.co/docs/reference/fleet/logstash-output)).
 
-**Greyed-out Logstash in a policy?** If the policy is the **Fleet Server** policy
-(or **APM**), Elastic **does not allow** Logstash as the default output for
-integrations or monitoring — use **Elasticsearch** for that policy. That
+**Greyed-out Logstash in a policy?** If the policy is the **Fleet Server**
+policy (or **APM**), Elastic **does not allow** Logstash as the default output
+for integrations or monitoring — use **Elasticsearch** for that policy. That
 restriction is separate from the API-key / pipeline steps above.
 
 ### Fleet “Enable SSL” on the Logstash output — what the fields mean
 
 When **Enable SSL** is on, Kibana’s form matches Elastic’s **mTLS** tutorial
 ([Configure SSL/TLS for the Logstash output](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections)):
-the in-product snippet uses `ssl_client_authentication => "required"`, so **client**
-cert + key are **required** in the UI (there is an open request to make them
-optional: [kibana#145266](https://github.com/elastic/kibana/issues/145266)).
+the in-product snippet uses `ssl_client_authentication => "required"`, so
+**client** cert + key are **required** in the UI (there is an open request to
+make them optional:
+[kibana#145266](https://github.com/elastic/kibana/issues/145266)).
 
-| UI field | What to paste (this repo after `task infra:certs:generate`) |
-|----------|---------------------------------------------------------------|
-| **Server SSL certificate authorities** | Full PEM of **`volumes/certs/ca/ca.crt`** — agents use this CA to **verify** the Logstash **server** cert. |
-| **Client SSL certificate** | Full PEM of **`volumes/certs/elastic_agent/elastic_agent.crt`** — shared client identity agents **present** to Logstash. |
-| **Client SSL certificate key** | PEM of **`elastic_agent.pkcs8.key`** if present, else **`elastic_agent.key`** — private key for the client cert (PKCS#8 preferred by Fleet). |
+| UI field                               | What to paste (this repo after `task infra:certs:generate`)                                                                                  |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Server SSL certificate authorities** | Full PEM of **`volumes/certs/ca/ca.crt`** — agents use this CA to **verify** the Logstash **server** cert.                                   |
+| **Client SSL certificate**             | Full PEM of **`volumes/certs/elastic_agent/elastic_agent.crt`** — shared client identity agents **present** to Logstash.                     |
+| **Client SSL certificate key**         | PEM of **`elastic_agent.pkcs8.key`** if present, else **`elastic_agent.key`** — private key for the client cert (PKCS#8 preferred by Fleet). |
 
-`task elk:fleet:bootstrap` can push the same PEMs via the Fleet API so you do not
-have to paste them by hand, **after** the `elastic_agent` cert exists on disk.
+`task elk:fleet:bootstrap` can push the same PEMs via the Fleet API so you do
+not have to paste them by hand, **after** the `elastic_agent` cert exists on
+disk.
 
 **ForensIQ mirror (duplicate stream):** The `ingest` pipeline **clones** each
 Fleet/integration event (`data_stream` or `[@metadata][_id]`): the **original**
-is indexed unchanged to Elasticsearch (Fleet contract); the **clone** is sent
-to the hot + cold pipelines for OCSF/cold HTTP. That doubles Logstash work and
+is indexed unchanged to Elasticsearch (Fleet contract); the **clone** is sent to
+the hot + cold pipelines for OCSF/cold HTTP. That doubles Logstash work and
 stores a second copy in `ocsf-logs-*` (and cold backend traffic) alongside the
 managed data streams — plan capacity accordingly.
 
@@ -219,6 +222,75 @@ classification) instead of directly to Elasticsearch:
 
 The same Taskfile command and enrollment token remain valid; only the policy’s
 output changes.
+
+---
+
+## Field provenance for ForensIQ pipeline
+
+This is how the fields referenced in `hot.conf` are set today:
+
+| Field                        | Source                                                                                                                            |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `@timestamp`                 | Set by Elastic Agent / integration ingest path (event occurrence time).                                                           |
+| `message`                    | Original incoming payload; when payload is JSON-stringified, Logstash parses it and replaces `message` with the inner `.message`. |
+| `event.dataset`              | Set by integration/data stream (`module.dataset` shape like `system.auth`, `application.app`, `tcp.generic`, etc.).               |
+| `host.name`                  | Set by Elastic Agent host metadata and/or promoted from parsed message (`host.name` key in JSON payload).                         |
+| `source.ip`                  | Present for network/listener integrations (for example custom TCP/UDP logs); optional for many host logs.                         |
+| `destination.ip`             | Optional; present only when source integration provides destination endpoint context.                                             |
+| `user.name`                  | Optional; present when source parser/integration extracts identity fields.                                                        |
+| `event.outcome`              | Optional in ECS (`success` / `failure` / `unknown`); absent for many log types.                                                   |
+| `event.id` / `event_id`      | Generated in Logstash (`uuid` filter) as unique per-event reference.                                                              |
+| `forensiq.event_fingerprint` | Generated in Logstash from canonical immutable source fields; server-side verified on cold ingest.                                |
+
+### forensiq.trust_tier values
+
+`forensiq.trust_tier` is one of the 6 canonical ML bootstrap classes:
+
+- `application`
+- `cloud`
+- `iam`
+- `iot`
+- `kernel`
+- `os`
+
+Logstash sets it from a coarse heuristic based on `event.dataset` (and a bit of
+`event.category` evidence for IAM/auth). ML is expected to re-classify and can
+override these values downstream.
+
+### Why some OCSF fields are defaulted
+
+OCSF requires enum IDs (`category_uid`, `class_uid`, `type_uid`, etc.). Not all
+incoming datasets provide enough semantics to pick an exact class. Current
+behavior:
+
+- default to OCSF Base Event (`category_uid=0`, `class_uid=0`, `type_uid=0`)
+- upgrade to IAM/Auth only when dataset/category clearly indicates
+  authentication semantics
+
+This avoids mislabeling non-auth logs while staying schema-valid.
+
+---
+
+## Fleet agent setup helper script
+
+Use this to create/verify a Fleet policy aligned with ForensIQ and generate an
+enrollment token:
+
+```bash
+task elk:fleet:agent:setup
+```
+
+Optional env vars:
+
+- `FORENSIQ_POLICY_NAME` (default: `ForensIQ Host Log Collection`)
+- `FORENSIQ_TOKEN_NAME` (default: `ForensIQ Host Agent Token`)
+- `FORENSIQ_USE_LOGSTASH_OUTPUT` (default: `true`)
+
+Then enroll:
+
+```bash
+task host-agent:enroll -- <TOKEN_FROM_OUTPUT>
+```
 
 ---
 

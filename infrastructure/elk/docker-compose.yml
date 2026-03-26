@@ -5,6 +5,8 @@ services:
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
       - certs:/usr/share/elasticsearch/config/certs
+    # Run as root so we can always write/update bind-mounted certs,
+    # but fix final ownership to host UID/GID afterwards.
     user: "0"
     working_dir: /usr/share/elasticsearch
     command: >
@@ -31,7 +33,7 @@ services:
             openssl pkcs8 -inform PEM -in config/certs/elastic_agent/elastic_agent.key -topk8 -nocrypt -outform PEM -out config/certs/elastic_agent/elastic_agent.pkcs8.key;
           fi;
         fi;
-        chown -R 1000:1000 config/certs;
+        chown -R ${ELK_HOST_UID:-1000}:${ELK_HOST_GID:-1000} config/certs;
         echo "Certs ready.";
       '
     healthcheck:
