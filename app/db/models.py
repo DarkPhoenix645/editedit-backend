@@ -19,6 +19,7 @@ from sqlalchemy.sql import func
 import uuid
 
 from app.db.base import Base
+from app.core.rbac import UserRole
 
 class Organization(Base):
     __tablename__ = "organizations"
@@ -48,9 +49,20 @@ class User(Base):
     __tablename__ = "users"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String, unique=True, index=True, nullable=False)
+    username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     name = Column(String, nullable=False)
-    role = Column(String, default="user", nullable=False)
+    is_active = Column(Boolean, nullable=False, server_default=text("true"))
+    role = Column(String, nullable=False, default=UserRole.INVESTIGATOR.value)
+    last_login = Column(DateTime(timezone=True), nullable=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
     cases = relationship("ForensicCase", back_populates="investigator")
     audit_logs = relationship("AccessAuditLog", back_populates="user")

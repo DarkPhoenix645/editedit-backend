@@ -12,6 +12,12 @@ class AccessAuditLog(BaseModel):
     timestamp: datetime
     model_config = ConfigDict(from_attributes=True)
 
+class AccessAuditLogListResponse(BaseModel):
+    items: list[AccessAuditLog]
+    total: int
+    skip: int
+    limit: int
+
 class InvestigatorDecisionCreate(BaseModel):
     case_id: UUID
     investigator_id: UUID
