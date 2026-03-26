@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     DATABASE_URL: str = ""
     COLDSTACK_SIGNING_PRIVATE_KEY_B64: str = ""
     COLDSTACK_SIGNING_KEY_ID: str = "cold-stack-dev"

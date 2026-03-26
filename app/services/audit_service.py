@@ -19,14 +19,14 @@ def _client_ip(request: Request) -> str | None:
 def record_access_audit(
     db: Session,
     *,
-    actor: User,
+    actor: User | None,
     action: str,
     resource_type: str,
     request: Request,
 ) -> AccessAuditLog:
     ip = _client_ip(request)
     entry = AccessAuditLog(
-        user_id=actor.id,
+        user_id=actor.id if actor is not None else None,
         action=action,
         resource_type=resource_type,
         ip_address=ip,
@@ -39,14 +39,14 @@ def record_access_audit(
 def record_access_audit_fire_and_forget(
     db: Session,
     *,
-    actor: User,
+    actor: User | None,
     action: str,
     resource_type: str,
     request: Request,
 ) -> None:
     ip = _client_ip(request)
     entry = AccessAuditLog(
-        user_id=actor.id,
+        user_id=actor.id if actor is not None else None,
         action=action,
         resource_type=resource_type,
         ip_address=ip,

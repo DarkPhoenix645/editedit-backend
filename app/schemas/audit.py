@@ -5,10 +5,10 @@ from typing import Optional, Any
 
 class AccessAuditLog(BaseModel):
     id: UUID
-    user_id: UUID
+    user_id: Optional[UUID]
     action: str
     resource_type: str
-    ip_address: IPvAnyAddress
+    ip_address: Optional[IPvAnyAddress]
     timestamp: datetime
     model_config = ConfigDict(from_attributes=True)
 
