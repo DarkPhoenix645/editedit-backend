@@ -33,6 +33,11 @@ vars:
     sh: echo "${OCSF_HOT_RETENTION_DAYS:-7}"
   SYNTH_LOG_COUNT: 500
   SYNTH_LOG_SLEEP_SEC: 0.01
+  ML_SYNTH_COUNT: 100
+  ML_SYNTH_SEED: 20260326
+  ML_SYNTH_OUTPUT: app/ml/synthetic_events.generated.json
+  ML_SYNTH_INPUT: ""
+  ML_SYNTH_DEVLOG_FILE: infrastructure/elk/devlogs/synthetic_ml.log
 
 tasks:
   infra:mkdir:
@@ -336,3 +341,16 @@ tasks:
       - sleep 7
       - curl -s --cacert volumes/certs/ca/ca.crt -u "elastic:{{.ELASTIC_PASSWORD}}" "https://localhost:9200/ocsf-logs-*/_search?q=forensiq-smoke&sort=@timestamp:desc&size=5"
       - docker logs fastapi-backend --since 2m | rg "/api/cold/ingest|sealed|block_id|Invalid secret"
+
+  ml:synthetic:inject:
+    desc: Append synthetic ML scenario logs into devlogs file for Elastic Agent ingestion
+    summary: |
+      usage:
+        task ml:synthetic:devlog
+        task ml:synthetic:devlog ML_SYNTH_COUNT=500 ML_SYNTH_SEED=20260327
+        task ml:synthetic:devlog ML_SYNTH_DEVLOG_FILE=infrastructure/elk/devlogs/my_ml.log
+      Writes JSON lines in ECS/logstash-like shape (with forensiq + ml fields) to devlogs.
+    cmds:
+      - mkdir -p {{.DEV_LOGS_PATH}}
+      - uv run python scripts/write_ml_synthetic_devlog.py --count "{{.ML_SYNTH_COUNT}}" --seed "{{.ML_SYNTH_SEED}}" --output-file "{{.ML_SYNTH_DEVLOG_FILE}}"
+      - tail -n 3 "{{.ML_SYNTH_DEVLOG_FILE}}"

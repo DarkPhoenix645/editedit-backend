@@ -30,6 +30,8 @@ class CaseOut(BaseModel):
     description: Optional[str]
     investigator_id: Optional[UUID]
     status: Optional[str]
+    origin: Optional[str] = None
+    auto_generated: bool = False
     created_at: Optional[datetime]
 
 

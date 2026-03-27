@@ -2,6 +2,31 @@
 
 ## Infra Setup & Run Instructions
 
+## TLS Strategy (Dev + AWS)
+
+This repo uses two TLS layers:
+
+1. **Public edge TLS** (browser/API clients): certificate trusted by public CAs.
+2. **Internal service TLS** (Elasticsearch/Kibana/Fleet/Logstash/backend
+   container traffic): private CA chain trusted by stack services.
+
+### Exact split (recommended)
+
+- **Dev (local Docker)**
+  - Internal container TLS CA: **private CA** (`setup` certutil).
+  - Backend HTTPS cert (`backend.crt/.key`): same internal CA chain from
+    `infrastructure/elk/volumes/certs/backend/*`.
+- **AWS deploy (frontend on Vercel)**
+  - Public TLS (`api.yourdomain.com`, optional `kibana.yourdomain.com`): **AWS
+    ACM public cert** on **ALB**.
+  - Internal container TLS (ES/Kibana/Fleet/Logstash/backend): **private
+    CA-issued certs** (self-managed CA, Step CA, or AWS Private CA), mounted to
+    the same cert paths expected by this stack.
+
+Important: internal service names like `es01`, `kib01`, `fleet`, `logstash`,
+`backend` are not public DNS names, so they should use a **private CA**, not
+public internet CAs.
+
 ### ELK Stack (Fleet, Elasticsearch, Kibana, Logstash)
 
 1. Create `.env` in `infrastructure/elk/`: copy
@@ -59,7 +84,7 @@
 
    Use `postgresql+psycopg://...` in `DATABASE_URL` for psycopg v3.
 
-3. **TLS:** The backend compose command expects ELK-generated certs at
+3. **TLS:** The backend compose command expects certs at
    `infrastructure/elk/volumes/certs/...` (see
    `infrastructure/backend/docker-compose.yml`). Generate certs with
    `task infra:certs:generate` after `task infra:mkdir`, or adjust the compose
@@ -188,3 +213,52 @@
    - A corresponding sealed block exists in `sealed_blocks`.
    - Object exists in WORM bucket.
    - No `raw-logs-*` writes from Logstash cold path.
+
+## AWS Deployment TLS Process (exact)
+
+Use this process when frontend is on Vercel and backend/ELK are on AWS:
+
+1. **Public API domain + ACM cert**
+   - Create Route53 record for `api.yourdomain.com`.
+   - Request ACM public cert for `api.yourdomain.com` (and any additional public
+     hostnames).
+   - Attach ACM cert to ALB listener `:443`.
+   - Configure ALB `:80` -> redirect to `:443`.
+
+2. **Run app containers behind ALB**
+   - ALB -> backend target group (HTTP or HTTPS; if HTTPS internally, mount
+     backend cert/key).
+   - Security groups: ALB public inbound 443; backend inbound only from ALB SG.
+
+3. **Internal stack certs (identical behavior to local cert bootstrap)**
+   - Keep cert file layout:
+     - `certs/ca/ca.crt`
+     - `certs/es01/es01.crt|key`
+     - `certs/kib01/kib01.crt|key`
+     - `certs/fleet/fleet.crt|key`
+     - `certs/logstash/logstash.crt|key`
+     - `certs/backend/backend.crt|key`
+     - `certs/elastic_agent/elastic_agent.crt|key|elastic_agent.pkcs8.key`
+   - Populate these certs via one-shot certutil bootstrap task/job.
+   - Mount certs read-only into each container at the same paths as compose
+     config.
+
+4. **Vercel frontend integration**
+   - Set frontend env to public API:
+     - `VITE_API_URL=https://api.yourdomain.com`
+   - Set backend CORS to Vercel domains:
+     - `CORS_ORIGINS=https://<your-project>.vercel.app,https://app.yourdomain.com`
+
+5. **Forgot-password link correctness**
+   - Set:
+     - `FRONTEND_RESET_PASSWORD_URL=https://app.yourdomain.com/reset-password`
+   - Ensure SMTP is configured (`SMTP_*`) and reachable from backend runtime.
+
+6. **Validation checks**
+   - Public edge cert:
+     - `curl -I https://api.yourdomain.com/api/health/`
+   - Internal CA trust in stack:
+     - `curl --cacert /path/to/ca.crt https://es01:9200` from trusted container
+       context
+   - Fleet/Logstash mTLS still healthy (per
+     `infrastructure/elk/ELK_AGENT_SETUP.md`).

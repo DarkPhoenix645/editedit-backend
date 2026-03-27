@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from uuid import UUID
+from datetime import datetime, timezone
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -21,6 +22,7 @@ MAX_PAGE_LIMIT = 100
 
 # Terminal investigation statuses (not "ongoing") — compared case-insensitively after trim.
 TERMINAL_INVESTIGATION_STATUSES = frozenset({"closed", "archived", "resolved"})
+SYSTEM_CASE_ORIGIN = "ml_infer_system"
 
 
 def _ongoing_case_predicate():
@@ -34,6 +36,43 @@ def _ongoing_case_predicate():
 
 def get_case(db: Session, case_id: UUID) -> ForensicCase | None:
     return db.get(ForensicCase, case_id)
+
+
+def get_or_create_system_case(
+    db: Session,
+    *,
+    source_label: str,
+) -> ForensicCase:
+    """Return an open auto-generated case for ML infer, creating one when absent."""
+    lowered = func.lower(func.trim(ForensicCase.status))
+    row = (
+        db.query(ForensicCase)
+        .filter(
+            ForensicCase.auto_generated.is_(True),
+            ForensicCase.origin == SYSTEM_CASE_ORIGIN,
+            or_(
+                ForensicCase.status.is_(None),
+                ~lowered.in_(tuple(TERMINAL_INVESTIGATION_STATUSES)),
+            ),
+        )
+        .order_by(ForensicCase.created_at.desc())
+        .first()
+    )
+    if row:
+        return row
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    row = ForensicCase(
+        case_name=f"Auto Case {now} [{source_label}]",
+        description="System-generated investigation from ML inference pipeline.",
+        status="open",
+        investigator_id=None,
+        origin=SYSTEM_CASE_ORIGIN,
+        auto_generated=True,
+    )
+    db.add(row)
+    db.flush()
+    return row
 
 
 def viewer_has_access(db: Session, case_id: UUID, user_id: UUID) -> bool:

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from uuid import UUID
+from uuid import uuid4
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -20,8 +22,10 @@ from app.schemas.case import (
 )
 from app.services import case_service
 from app.services.audit_service import record_access_audit
+from app.services.dossier_service import build_case_dossier, build_case_dossier_pdf
 
 router = APIRouter()
+_DOSSIER_JOBS: dict[str, dict] = {}
 
 
 def _role(user: User) -> UserRole:
@@ -448,3 +452,90 @@ def revoke_case_viewer(
         request=request,
     )
     return None
+
+
+@router.post("/{case_id}/dossier", status_code=status.HTTP_202_ACCEPTED)
+def start_case_dossier(
+    request: Request,
+    case_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    role = _role(current_user)
+    _enforce_read(request, db, current_user, can_read_cases(role), "case.dossier.create")
+    case_row = case_service.get_case(db, case_id)
+    if not case_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    if not _can_read_case_row(db, role=role, current_user=current_user, case_row=case_row):
+        _enforce_read(request, db, current_user, False, "case.dossier.create")
+
+    job_id = f"dossier-{uuid4().hex[:16]}"
+    payload = build_case_dossier(db, case_id)
+    pdf_bytes = build_case_dossier_pdf(payload)
+    _DOSSIER_JOBS[job_id] = {
+        "job_id": job_id,
+        "case_id": str(case_id),
+        "status": "done",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "payload": payload,
+        "pdf_bytes": pdf_bytes,
+    }
+    return {
+        "job_id": job_id,
+        "case_id": str(case_id),
+        "status": "done",
+    }
+
+
+@router.get("/{case_id}/dossier/{job_id}")
+def get_case_dossier_status(
+    request: Request,
+    case_id: UUID,
+    job_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    role = _role(current_user)
+    _enforce_read(request, db, current_user, can_read_cases(role), "case.dossier.status")
+    case_row = case_service.get_case(db, case_id)
+    if not case_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    if not _can_read_case_row(db, role=role, current_user=current_user, case_row=case_row):
+        _enforce_read(request, db, current_user, False, "case.dossier.status")
+    row = _DOSSIER_JOBS.get(job_id)
+    if row is None or row.get("case_id") != str(case_id):
+        raise HTTPException(status_code=404, detail="Dossier job not found")
+    return {
+        "job_id": row["job_id"],
+        "case_id": row["case_id"],
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "download_url": f"/api/cases/{case_id}/dossier/{job_id}/download",
+    }
+
+
+@router.get("/{case_id}/dossier/{job_id}/download")
+def download_case_dossier(
+    request: Request,
+    case_id: UUID,
+    job_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    role = _role(current_user)
+    _enforce_read(request, db, current_user, can_read_cases(role), "case.dossier.download")
+    case_row = case_service.get_case(db, case_id)
+    if not case_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    if not _can_read_case_row(db, role=role, current_user=current_user, case_row=case_row):
+        _enforce_read(request, db, current_user, False, "case.dossier.download")
+    row = _DOSSIER_JOBS.get(job_id)
+    if row is None or row.get("case_id") != str(case_id):
+        raise HTTPException(status_code=404, detail="Dossier job not found")
+    if row.get("status") != "done":
+        raise HTTPException(status_code=409, detail="Dossier not ready")
+    return Response(
+        content=row["pdf_bytes"],
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="case-{case_id}-dossier.pdf"'},
+    )

@@ -106,6 +106,17 @@ def _build_reasoning_chain(
     ]
 
 
+def _derive_scenario(event: LogEvent) -> tuple[str, str]:
+    entity = event.user_id or "unknown-user"
+    src = event.source_ip or "unknown-src"
+    dst = event.dest_ip or event.resource or "unknown-dst"
+    bucket = event.timestamp.strftime("%Y%m%d%H")
+    seed = f"{entity}|{src}|{dst}|{bucket}"
+    scenario_id = f"SCN-{hashlib.sha1(seed.encode('utf-8')).hexdigest()[:12]}"
+    scenario_title = f"{event.action} activity chain for {entity}"
+    return scenario_id, scenario_title
+
+
 def _apply_p01_refinement(
     source_cache: dict[str, LogSource],
     anomalies: dict[str, list[float]],
@@ -129,6 +140,7 @@ def infer_event(
     attack_graph: AttackGraph,
     fusion: FusionEngine,
     rag: RAGEngine,
+    job_id: str | None = None,
 ) -> InferEventResponse:
     t0 = time.monotonic()
     if not req.events:
@@ -204,6 +216,7 @@ def infer_event(
 
         if fusion_result["score"] > 0.3:
             hyp_id = f"HYP-{uuid4().hex[:8]}"
+            scenario_id, scenario_title = _derive_scenario(event)
             hypothesis = Hypothesis(
                 hypothesis_id=hyp_id,
                 case_id=req.case_id,
@@ -230,6 +243,11 @@ def infer_event(
                     symbolic_boost=symbolic_boost,
                     fusion_result=fusion_result,
                 ),
+                scenario_id=scenario_id,
+                scenario_title=scenario_title,
+                neural_score=neural_score,
+                symbolic_risk_score=symbolic_boost,
+                decision_threshold=0.3,
             )
             hypotheses.append(hypothesis)
             hypothesis_store[hyp_id] = {
@@ -242,7 +260,10 @@ def infer_event(
 
             db_hyp = ForensicHypothesis(
                 hypothesis_uid=hyp_id,
+                inference_job_id=job_id,
                 case_id=req.case_id,
+                scenario_id=scenario_id,
+                scenario_title=scenario_title,
                 generation_source="forensiq-v0.1.0",
                 anomaly_score=fusion_result["anomaly_score"],
                 confidence_score=fusion_result["score"],
@@ -261,6 +282,12 @@ def infer_event(
                 mitre_technique_id=fusion_result.get("mitre_technique_id"),
                 mitre_technique_name=fusion_result.get("mitre_technique_name"),
                 mitre_tactic=fusion_result.get("mitre_tactic"),
+                cryptographic_evidence_snippet=f"fingerprint:{elastic_event_id}",
+                neuro_symbolic_reasoning_chain=hypothesis.neuro_symbolic_reasoning_chain,
+                neural_score=neural_score,
+                symbolic_risk_score=symbolic_boost,
+                decision_threshold=0.3,
+                source_event_timestamp=event.timestamp,
             )
             db.add(db_hyp)
             db.flush()

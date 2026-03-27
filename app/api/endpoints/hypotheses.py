@@ -19,8 +19,7 @@ from app.core.rbac import (
     user_role_from_db,
 )
 from app.services import case_service
-from app.core.worm import read_worm_line
-from app.db.models import ForensicHypothesis, HotColdTrace, HypothesisEvidenceMap, User
+from app.db.models import ForensicCase, ForensicHypothesis, HotColdTrace, HypothesisEvidenceMap, User
 from app.db.session import get_db
 from app.ml.counterfactual import simulate_counterfactual_modifiers
 from app.ml.schemas import (
@@ -29,7 +28,9 @@ from app.ml.schemas import (
     EvidenceItem,
     HypothesisDetail,
     HypothesisOut,
+    ScenarioTimelineItem,
 )
+from app.services.evidence_service import read_evidence_raw_event
 
 logger = logging.getLogger("forensiq.api.hypotheses")
 
@@ -185,9 +186,60 @@ def list_hypotheses(
                 created_at=created,
                 evidence_count=counts.get(r.id, 0),
                 case_id=r.case_id,
+                scenario_id=r.scenario_id,
+                scenario_title=r.scenario_title,
             )
         )
     return out
+
+
+@router.get("/timeline", response_model=list[ScenarioTimelineItem])
+def list_hypothesis_timeline(
+    case_id: Optional[UUID] = None,
+    offset: int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_hypothesis_read(current_user)
+    rows = list_hypotheses(
+        case_id=case_id,
+        min_score=None,
+        offset=offset,
+        limit=limit,
+        db=db,
+        current_user=current_user,
+    )
+    grouped: dict[str, ScenarioTimelineItem] = {}
+    case_ids = {r.case_id for r in rows if r.case_id is not None}
+    case_map: dict[UUID, ForensicCase] = {}
+    if case_ids:
+        crows = db.query(ForensicCase).filter(ForensicCase.id.in_(case_ids)).all()
+        case_map = {c.id: c for c in crows}
+    for row in rows:
+        sid = row.scenario_id or f"legacy-{row.id}"
+        created = row.created_at
+        c = case_map.get(row.case_id) if row.case_id else None
+        item = grouped.get(sid)
+        if item is None:
+            item = ScenarioTimelineItem(
+                scenario_id=sid,
+                scenario_title=row.scenario_title,
+                case_id=row.case_id,
+                case_title=c.case_name if c else None,
+                case_origin=c.origin if c else None,
+                auto_generated=bool(c.auto_generated) if c else False,
+                aggregate_start_ts=created,
+                aggregate_end_ts=created,
+                hypotheses=[],
+            )
+            grouped[sid] = item
+        if created < item.aggregate_start_ts:
+            item.aggregate_start_ts = created
+        if created > item.aggregate_end_ts:
+            item.aggregate_end_ts = created
+        item.hypotheses.append(row)
+    return list(grouped.values())
 
 
 @router.post("/{hyp_id}/counterfactual", response_model=CounterfactualModifiersResponse)
@@ -249,14 +301,22 @@ def get_hypothesis(
         if fp:
             trace = db.query(HotColdTrace).filter(HotColdTrace.event_fingerprint == fp).first()
         raw_line: str | None = None
+        proof_meta = {
+            "object_key": None,
+            "object_version": None,
+            "object_bucket": None,
+            "leaf_index": None,
+            "proof_available": False,
+        }
         if trace and trace.storage_uri:
             try:
-                key = trace.storage_uri.split("/", 3)[-1]
-                blob = read_worm_line(key=key, offset=trace.cold_offset)
-                if blob:
-                    raw_line = blob.decode("utf-8", errors="replace")
+                raw_line, proof_meta = read_evidence_raw_event(
+                    storage_uri=trace.storage_uri,
+                    cold_offset=trace.cold_offset,
+                    event_fingerprint=fp,
+                )
             except Exception as exc:
-                logger.debug("WORM read failed for %s: %s", fp, exc)
+                logger.debug("evidence read failed for %s: %s", fp, exc)
 
         evidence.append(
             EvidenceItem(
@@ -266,6 +326,11 @@ def get_hypothesis(
                 cold_offset=trace.cold_offset if trace else None,
                 storage_uri=trace.storage_uri if trace else None,
                 raw_log_line=raw_line,
+                object_key=proof_meta.get("object_key"),
+                object_version=proof_meta.get("object_version"),
+                object_bucket=proof_meta.get("object_bucket"),
+                leaf_index=proof_meta.get("leaf_index"),
+                proof_available=bool(proof_meta.get("proof_available")),
             )
         )
 
@@ -285,6 +350,10 @@ def get_hypothesis(
         pattern_severity=float(row.pattern_severity or 1.0),
         rule_trace=[str(x) for x in row.rule_trace] if row.rule_trace else [],
         reasoning_chain=reasoning_chain,
+        cryptographic_evidence_snippet=row.cryptographic_evidence_snippet,
+        neuro_symbolic_reasoning_chain=[
+            str(x) for x in (row.neuro_symbolic_reasoning_chain or [])
+        ],
         fusion_policy_hash=row.fusion_policy_hash,
         evidence_ids=list(row.evidence_ids) if row.evidence_ids else None,
         mitre_technique_id=row.mitre_technique_id,
@@ -298,6 +367,9 @@ def get_hypothesis(
         event_metadata=meta,
         created_at=row.created_at or datetime.now(timezone.utc),
         evidence=evidence,
+        scenario_id=row.scenario_id,
+        scenario_title=row.scenario_title,
+        decision_threshold=float(row.decision_threshold or 0.3),
     )
 
 
@@ -341,4 +413,6 @@ def patch_hypothesis(
         created_at=row.created_at or datetime.now(timezone.utc),
         evidence_count=int(n_ev or 0),
         case_id=row.case_id,
+        scenario_id=row.scenario_id,
+        scenario_title=row.scenario_title,
     )

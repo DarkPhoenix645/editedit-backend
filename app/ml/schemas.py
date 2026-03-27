@@ -61,6 +61,11 @@ class Hypothesis(BaseModel):
     mitre_tactic: Optional[str] = None
     cryptographic_evidence_snippet: Optional[str] = None
     neuro_symbolic_reasoning_chain: list[str] = Field(default_factory=list)
+    scenario_id: Optional[str] = None
+    scenario_title: Optional[str] = None
+    neural_score: Optional[float] = None
+    symbolic_risk_score: Optional[float] = None
+    decision_threshold: Optional[float] = None
 
 
 class MitreTechniqueOut(BaseModel):
@@ -93,14 +98,25 @@ class InferEventResponse(BaseModel):
 
 
 class InferAckResponse(BaseModel):
-    """Minimal ack for Logstash HTTP push (hypotheses persisted in DB)."""
+    """Async ack for Logstash HTTP push (job queued)."""
 
-    events_processed: int
-    hypotheses_emitted: int
-    calibrating: bool
-    graph_nodes: int
-    graph_edges: int
-    processing_time_ms: int = 0
+    job_id: str
+    status: str
+    case_id: Optional[UUID] = None
+    case_auto_generated: bool = False
+    events_received: int
+
+
+class InferJobStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    case_id: Optional[UUID] = None
+    case_auto_generated: bool = False
+    events_received: int
+    events_processed: int = 0
+    hypotheses_emitted: int = 0
+    error: Optional[str] = None
+    result: dict[str, Any] = Field(default_factory=dict)
 
 
 class VerificationRequest(BaseModel):
@@ -147,6 +163,11 @@ class EvidenceItem(BaseModel):
     cold_offset: Optional[int] = None
     storage_uri: Optional[str] = None
     raw_log_line: Optional[str] = None
+    object_key: Optional[str] = None
+    object_version: Optional[str] = None
+    object_bucket: Optional[str] = None
+    leaf_index: Optional[int] = None
+    proof_available: bool = False
 
 
 class HypothesisOut(BaseModel):
@@ -164,6 +185,8 @@ class HypothesisOut(BaseModel):
     created_at: datetime
     evidence_count: int = 0
     case_id: Optional[UUID] = None
+    scenario_id: Optional[str] = None
+    scenario_title: Optional[str] = None
 
 
 class HypothesisDetail(BaseModel):
@@ -184,6 +207,8 @@ class HypothesisDetail(BaseModel):
     pattern_severity: float = 1.0
     rule_trace: list[str] = Field(default_factory=list)
     reasoning_chain: list[str] = Field(default_factory=list)
+    cryptographic_evidence_snippet: Optional[str] = None
+    neuro_symbolic_reasoning_chain: list[str] = Field(default_factory=list)
     fusion_policy_hash: Optional[str] = None
     evidence_ids: Optional[list[Any]] = None
     mitre_technique_id: Optional[str] = None
@@ -197,6 +222,21 @@ class HypothesisDetail(BaseModel):
     event_metadata: Optional[dict[str, Any]] = None
     created_at: datetime
     evidence: list[EvidenceItem] = Field(default_factory=list)
+    scenario_id: Optional[str] = None
+    scenario_title: Optional[str] = None
+    decision_threshold: float = 0.3
+
+
+class ScenarioTimelineItem(BaseModel):
+    scenario_id: str
+    scenario_title: Optional[str] = None
+    case_id: Optional[UUID] = None
+    case_title: Optional[str] = None
+    case_origin: Optional[str] = None
+    auto_generated: bool = False
+    aggregate_start_ts: datetime
+    aggregate_end_ts: datetime
+    hypotheses: list[HypothesisOut] = Field(default_factory=list)
 
 
 class HypothesisCaseAttachRequest(BaseModel):

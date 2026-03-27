@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 from uuid import UUID
+from uuid import uuid4
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -10,11 +11,9 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import get_db
 from app.ml import MLEngine
-from app.ml.normalize import logstash_event_to_log_event
-from app.ml.orchestrator import infer_event
-from app.ml.schemas import InferAckResponse, InferEventRequest
+from app.ml.schemas import InferAckResponse, InferJobStatusResponse
 from app.services import case_service
-from app.services.log_source_resolve import resolve_log_source_id_str
+from app.services.infer_job_service import InferJobManager
 
 logger = logging.getLogger("forensiq.api.infer")
 
@@ -47,12 +46,13 @@ def _coerce_infer_payload(body: Any) -> tuple[list[dict[str, Any]], UUID | None]
     )
 
 
-@router.post("/infer", response_model=InferAckResponse)
+@router.post("/infer", response_model=InferAckResponse, status_code=202)
 def ml_infer(
     request: Request,
     body: Any = Body(...),
     db: Session = Depends(get_db),
     x_logstash_secret: str = Header(..., alias="X-Logstash-Secret"),
+    x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
 ):
     if x_logstash_secret != settings.LOGSTASH_SHARED_SECRET:
         raise HTTPException(status_code=403, detail="Invalid secret")
@@ -63,54 +63,42 @@ def ml_infer(
         case_row = case_service.get_case(db, case_id)
         if not case_row:
             raise HTTPException(status_code=404, detail="Case not found")
-        if raw_events:
-            allowed = case_service.allowed_log_source_id_strs(db, case_id)
-            if not allowed:
-                raise HTTPException(
-                    status_code=422,
-                    detail="Attach at least one log source to this investigation before inference",
-                )
-            filtered: list[dict[str, Any]] = []
-            for raw in raw_events:
-                if not isinstance(raw, dict):
-                    continue
-                sid = resolve_log_source_id_str(raw, db)
-                if sid and sid in allowed:
-                    filtered.append(raw)
-            if not filtered:
-                raise HTTPException(
-                    status_code=422,
-                    detail="No events matched this investigation's log sources "
-                    "(set top-level source_id or ensure agent/host matches a known log source)",
-                )
-            raw_events = filtered
-
     ml: MLEngine = request.app.state.ml
-
-    events = []
-    for raw in raw_events:
-        if not isinstance(raw, dict):
-            continue
-        try:
-            events.append(logstash_event_to_log_event(raw))
-        except Exception as exc:
-            logger.warning("normalize failed for one event: %s", exc)
-
-    req = InferEventRequest(events=events, case_id=case_id)
-    out = infer_event(
-        req,
-        db,
-        detector=ml.anomaly,
-        attack_graph=ml.graph,
-        fusion=ml.fusion,
-        rag=ml.rag,
+    manager: InferJobManager = request.app.state.infer_job_manager
+    manager.start_worker(ml)
+    idem_key = x_idempotency_key or f"{case_id or 'auto'}:{len(raw_events)}:{uuid4().hex}"
+    job = manager.submit(
+        job_id=f"job-{uuid4().hex[:16]}",
+        idempotency_key=idem_key,
+        raw_events=raw_events,
+        case_id=case_id,
+    )
+    return InferAckResponse(
+        job_id=job.job_id,
+        status=job.status,
+        case_id=job.case_id,
+        case_auto_generated=job.case_auto_generated,
+        events_received=job.events_received,
     )
 
-    return InferAckResponse(
-        events_processed=out.events_processed,
-        hypotheses_emitted=len(out.hypotheses),
-        calibrating=out.calibrating,
-        graph_nodes=out.graph_nodes,
-        graph_edges=out.graph_edges,
-        processing_time_ms=out.processing_time_ms,
+
+@router.get("/infer/jobs/{job_id}", response_model=InferJobStatusResponse)
+def ml_infer_job_status(
+    request: Request,
+    job_id: str,
+):
+    manager: InferJobManager = request.app.state.infer_job_manager
+    job = manager.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return InferJobStatusResponse(
+        job_id=job.job_id,
+        status=job.status,
+        case_id=job.case_id,
+        case_auto_generated=job.case_auto_generated,
+        events_received=job.events_received,
+        events_processed=job.events_processed,
+        hypotheses_emitted=job.hypotheses_emitted,
+        error=job.error,
+        result=job.result,
     )

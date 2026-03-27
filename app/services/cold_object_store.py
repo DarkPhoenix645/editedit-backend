@@ -54,7 +54,7 @@ def _storage_uri(bucket: str, object_key: str, version_id: str | None) -> str:
 
 def _object_key(source_id: str, sequence_number: int, block_id: str) -> str:
     prefix = settings.MINIO_PREFIX.strip("/")
-    object_name = f"{source_id}/{sequence_number:020d}-{block_id}.json"
+    object_name = f"{source_id}/{sequence_number:020d}-{block_id}.txt"
     if not prefix:
         return object_name
     return f"{prefix}/{object_name}"

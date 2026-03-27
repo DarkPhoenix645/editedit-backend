@@ -13,7 +13,12 @@ Elastic Agent for log collection using the Taskfile command.
 5. `jq` installed
 6. `infrastructure/elk/.env` configured
 
-**ForensIQ backend / MinIO:** The API stack (`task backend:up`) uses the external Docker network **`forensiq_shared`**, shared with **MinIO** (S3-compatible storage for WORM and cold paths). The Taskfile creates that network if missing. It is separate from `elk_default`; the backend container also joins `elk_default` when present. See the [README](../../README.md) FastAPI section.
+**ForensIQ backend / MinIO:** The API stack (`task backend:up`) uses the
+external Docker network **`forensiq_shared`**, shared with **MinIO**
+(S3-compatible storage for WORM and cold paths). The Taskfile creates that
+network if missing. It is separate from `elk_default`; the backend container
+also joins `elk_default` when present. See the [README](../../README.md) FastAPI
+section.
 
 ---
 
@@ -112,9 +117,9 @@ managed data streams — plan capacity accordingly.
      (adds the System integration).
 4. Click **Create agent policy**. Note the **Agent policy ID** (e.g.
    `host-log-policy` or a generated ID) for reference.
-5. (Optional) In **Kibana > Fleet > Agent policies > Host Log Collection > Add integration**, add **System** if not
-   already there; configure log streams (e.g. paths like `/var/log/*.log`) and
-   metrics as needed. Save.
+5. (Optional) In **Kibana > Fleet > Agent policies > Host Log Collection > Add
+   integration**, add **System** if not already there; configure log streams
+   (e.g. paths like `/var/log/*.log`) and metrics as needed. Save.
 
 ### 1.3 Create an enrollment token for the policy
 
@@ -209,10 +214,11 @@ task host-agent:enroll -- <ENROLLMENT_TOKEN>
 If you want this agent to send data via Logstash (e.g. for OCSF/trust
 classification) instead of directly to Elasticsearch:
 
-1. In **Kibana > Fleet > Settings > Outputs**, ensure an output of type **Logstash**
-   exists (e.g. **Logstash Ingest Pipeline**) with host `logstash:5044`.
-2. In **Kibana > Fleet > Agent policies > Host Log Collection > Settings (or Output)**,
-   select the policy output section.
+1. In **Kibana > Fleet > Settings > Outputs**, ensure an output of type
+   **Logstash** exists (e.g. **Logstash Ingest Pipeline**) with host
+   `logstash:5044`.
+2. In **Kibana > Fleet > Agent policies > Host Log Collection > Settings (or
+   Output)**, select the policy output section.
 3. Set the policy’s **Output** to that Logstash output (instead of Elasticsearch
    Direct). Save.
 4. Redeploy or wait for the agent to pick up the new output.

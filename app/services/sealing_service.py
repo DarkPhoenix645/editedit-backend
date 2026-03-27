@@ -93,6 +93,27 @@ def compute_merkle_root(entries: list[dict[str, Any]]) -> bytes:
     return level[0]
 
 
+def merkle_proof_for_leaf(leaf_hashes_hex: list[str], leaf_index: int) -> list[dict[str, Any]]:
+    """Build sibling path for a leaf index using duplicated-last strategy."""
+    if not leaf_hashes_hex:
+        return []
+    idx = max(0, min(int(leaf_index), len(leaf_hashes_hex) - 1))
+    level = [bytes.fromhex(x) for x in leaf_hashes_hex]
+    proof: list[dict[str, Any]] = []
+    while len(level) > 1:
+        if len(level) % 2 == 1:
+            level.append(level[-1])
+        sib_idx = idx - 1 if idx % 2 else idx + 1
+        position = "left" if idx % 2 else "right"
+        proof.append({"sibling_hash": level[sib_idx].hex(), "position": position})
+        next_level: list[bytes] = []
+        for i in range(0, len(level), 2):
+            next_level.append(hashlib.sha256(level[i] + level[i + 1]).digest())
+        idx = idx // 2
+        level = next_level
+    return proof
+
+
 def _load_private_key() -> rsa.RSAPrivateKey:
     global _SEALING_PRIVATE_KEY
     if _SEALING_PRIVATE_KEY is not None:
@@ -496,7 +517,7 @@ def seal_event_batch(
     tsa_token = hashlib.sha256(
         chain_hash + authoritative_time.isoformat().encode("utf-8")
     ).digest()
-    storage_key = f"blocks/{payload_hash.hex()}.raw"
+    storage_key = f"blocks/{payload_hash.hex()}.log"
     etag = upload_to_worm(
         storage_key,
         payload + b"\n",
@@ -679,17 +700,37 @@ def process_cold_events(db: Session, events: list[dict[str, Any]]) -> SealedBloc
     )
     db.add(stored_block)
 
-    event_ids = [_derive_event_id(event) for event in events]
+    event_fingerprints = [
+        str(
+            _first_present(
+                event,
+                "forensiq.event_fingerprint",
+                "event.hash",
+                "event.id",
+                "event_id",
+                default=_derive_event_id(event),
+            )
+        )
+        for event in events
+    ]
     existing_ids = {
         row[0]
-        for row in db.query(HotColdTrace.elastic_event_id)
-        .filter(HotColdTrace.elastic_event_id.in_(event_ids))
+        for row in db.query(HotColdTrace.event_fingerprint)
+        .filter(HotColdTrace.event_fingerprint.in_(event_fingerprints))
         .all()
     }
-    for event_id in event_ids:
-        if event_id in existing_ids:
+    for event_fingerprint in event_fingerprints:
+        if event_fingerprint in existing_ids:
             continue
-        db.add(HotColdTrace(elastic_event_id=event_id, block_id=block.id, cold_offset=0, storage_uri=block.storage_uri, event_fingerprint=event_id))
+        db.add(
+            HotColdTrace(
+                elastic_event_id=event_fingerprint,
+                block_id=block.id,
+                cold_offset=0,
+                storage_uri=block.storage_uri,
+                event_fingerprint=event_fingerprint,
+            )
+        )
 
     db.commit()
     db.refresh(block)
