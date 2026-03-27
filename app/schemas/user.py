@@ -14,6 +14,7 @@ class UserOut(BaseModel):
     id: UUID
     email: EmailStr
     username: str
+    name: str
     role: UserRole
     is_active: bool
     created_at: datetime

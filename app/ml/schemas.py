@@ -74,6 +74,11 @@ class MitreTechniqueOut(BaseModel):
 
 class InferEventRequest(BaseModel):
     events: list[LogEvent]
+    case_id: Optional[UUID] = Field(
+        default=None,
+        description="When set, hypotheses are stored under this investigation; "
+        "ingest must be filtered to the case's attached log sources.",
+    )
 
 
 class InferEventResponse(BaseModel):

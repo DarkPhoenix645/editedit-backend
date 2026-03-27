@@ -1,11 +1,13 @@
 from fastapi import APIRouter
 
-from app.api.endpoints import auth, audit_logs, cold, graph_api, health, organizations, hypotheses, infer, phase6, users
+from app.api.endpoints import auth, audit_logs, cases, cold, graph_api, health, log_sources, organizations, hypotheses, infer, phase6, users
 
 api_router = APIRouter()
 
 api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 api_router.include_router(users.router, prefix="/users", tags=["Users"])
+api_router.include_router(cases.router, prefix="/cases", tags=["Cases"])
+api_router.include_router(log_sources.router, prefix="/log-sources", tags=["Log Sources"])
 api_router.include_router(organizations.router, prefix="/organizations", tags=["Organizations"])
 api_router.include_router(health.router, prefix="/health", tags=["Health"])
 api_router.include_router(audit_logs.router, prefix="/audit-logs", tags=["Audit Logs"])

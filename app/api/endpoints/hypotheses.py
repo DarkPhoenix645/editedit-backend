@@ -18,6 +18,7 @@ from app.core.rbac import (
     can_view_hypotheses,
     user_role_from_db,
 )
+from app.services import case_service
 from app.core.worm import read_worm_line
 from app.db.models import ForensicHypothesis, HotColdTrace, HypothesisEvidenceMap, User
 from app.db.session import get_db
@@ -55,6 +56,26 @@ def _require_hypothesis_mutate(user: User) -> None:
     r = _role(user)
     if not can_mutate_hypothesis(r):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+
+
+def _require_viewer_case_access(
+    db: Session,
+    current_user: User,
+    case_id: UUID | None,
+) -> None:
+    """VIEWER may only see hypotheses tied to investigations they are assigned to."""
+    if _role(current_user) != UserRole.VIEWER:
+        return
+    if case_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Hypothesis is not scoped to an investigation you can access",
+        )
+    if not case_service.viewer_has_access(db, case_id, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not assigned to this investigation",
+        )
 
 
 def _confidence_to_severity(conf: float | None) -> str:
@@ -110,8 +131,22 @@ def list_hypotheses(
     current_user: User = Depends(get_current_user),
 ):
     _require_hypothesis_read(current_user)
+    r = _role(current_user)
     q = db.query(ForensicHypothesis).order_by(ForensicHypothesis.created_at.desc())
-    if case_id is not None:
+    if r == UserRole.VIEWER:
+        allowed = case_service.viewer_case_ids(db, current_user.id)
+        if case_id is not None:
+            if case_id not in allowed:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not assigned to this investigation",
+                )
+            q = q.filter(ForensicHypothesis.case_id == case_id)
+        else:
+            if not allowed:
+                return []
+            q = q.filter(ForensicHypothesis.case_id.in_(allowed))
+    elif case_id is not None:
         q = q.filter(ForensicHypothesis.case_id == case_id)
     if min_score is not None:
         q = q.filter(ForensicHypothesis.confidence_score >= min_score)
@@ -195,6 +230,7 @@ def get_hypothesis(
     row = _resolve_hypothesis(db, hyp_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Hypothesis not found")
+    _require_viewer_case_access(db, current_user, row.case_id)
 
     links = db.query(HypothesisEvidenceMap).filter(HypothesisEvidenceMap.hypothesis_id == row.id).all()
     evidence: list[EvidenceItem] = []

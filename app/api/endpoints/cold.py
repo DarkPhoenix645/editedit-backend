@@ -172,7 +172,10 @@ def ingest_cold_batch(
 def rederive_ocsf_by_fingerprint(
     event_fingerprint: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    if not can_verify_sealed_block(_role(current_user)):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
     trace = (
         db.query(HotColdTrace)
         .filter(HotColdTrace.event_fingerprint == event_fingerprint)

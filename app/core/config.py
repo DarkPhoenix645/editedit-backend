@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 30
     FRONTEND_RESET_PASSWORD_URL: str = ""
+    # Comma-separated browser origins for SPA (e.g. http://localhost:5173,https://app.example.com). Empty = CORS disabled.
+    CORS_ORIGINS: str = ""
     # Password reset email (optional). If SMTP_HOST is empty, reset links are only logged.
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587

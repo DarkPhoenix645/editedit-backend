@@ -206,6 +206,7 @@ def infer_event(
             hyp_id = f"HYP-{uuid4().hex[:8]}"
             hypothesis = Hypothesis(
                 hypothesis_id=hyp_id,
+                case_id=req.case_id,
                 title=f"Anomalous {event.action} by {event.user_id}",
                 description=(
                     f"User '{event.user_id}' performed '{event.action}' from {event.source_ip} "
@@ -233,6 +234,7 @@ def infer_event(
             hypotheses.append(hypothesis)
             hypothesis_store[hyp_id] = {
                 **hypothesis.model_dump(mode="json"),
+                "case_id": str(req.case_id) if req.case_id else None,
                 "trust_tier": event.trust_tier.value,
                 "action": event.action,
                 "metadata": event.metadata,
@@ -240,6 +242,7 @@ def infer_event(
 
             db_hyp = ForensicHypothesis(
                 hypothesis_uid=hyp_id,
+                case_id=req.case_id,
                 generation_source="forensiq-v0.1.0",
                 anomaly_score=fusion_result["anomaly_score"],
                 confidence_score=fusion_result["score"],

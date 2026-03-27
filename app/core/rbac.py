@@ -116,3 +116,13 @@ def can_verify_sealed_block(role: UserRole) -> bool:
         UserRole.INVESTIGATOR,
         UserRole.VIEWER,
     }
+
+
+def can_read_cases(role: UserRole) -> bool:
+    """List/get investigations and log sources for attachment."""
+    return can_view_hypotheses(role)
+
+
+def can_write_cases(role: UserRole) -> bool:
+    """Create/update/delete investigations and attach log sources."""
+    return role in {UserRole.ADMIN, UserRole.IT_STAFF, UserRole.INVESTIGATOR}

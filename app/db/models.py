@@ -69,6 +69,12 @@ class User(Base):
     decisions = relationship("InvestigatorDecision", back_populates="investigator")
     refresh_tokens = relationship("RefreshToken", back_populates="user")
     password_reset_tokens = relationship("PasswordResetToken", back_populates="user")
+    viewer_case_access = relationship(
+        "ForensicCaseViewerAccess",
+        foreign_keys="ForensicCaseViewerAccess.user_id",
+        back_populates="viewer_user",
+    )
+
 
 class ForensicCase(Base):
     __tablename__ = "forensic_cases"
@@ -82,6 +88,59 @@ class ForensicCase(Base):
     investigator = relationship("User", back_populates="cases")
     hypotheses = relationship("ForensicHypothesis", back_populates="case")
     decisions = relationship("InvestigatorDecision", back_populates="case")
+    log_source_links = relationship(
+        "ForensicCaseLogSource",
+        back_populates="case",
+        cascade="all, delete-orphan",
+    )
+    viewer_links = relationship(
+        "ForensicCaseViewerAccess",
+        back_populates="case",
+        cascade="all, delete-orphan",
+    )
+
+
+class ForensicCaseViewerAccess(Base):
+    """Viewer users explicitly granted read access to an investigation."""
+
+    __tablename__ = "forensic_case_viewer_access"
+
+    case_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("forensic_cases.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    case = relationship("ForensicCase", back_populates="viewer_links")
+    viewer_user = relationship("User", foreign_keys=[user_id], back_populates="viewer_case_access")
+
+
+class ForensicCaseLogSource(Base):
+    """Many-to-many: an investigation (case) scopes inference to selected log sources."""
+
+    __tablename__ = "forensic_case_log_sources"
+
+    case_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("forensic_cases.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    log_source_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("log_sources.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    case = relationship("ForensicCase", back_populates="log_source_links")
+    log_source = relationship("LogSource", back_populates="case_links")
+
 
 class ForensicHypothesis(Base):
     __tablename__ = "forensic_hypotheses"
@@ -121,6 +180,7 @@ class LogSource(Base):
     provider_type = Column(String, nullable=False)
     os_type = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    case_links = relationship("ForensicCaseLogSource", back_populates="log_source")
 
 class AccessAuditLog(Base):
     __tablename__ = "access_audit_log"
