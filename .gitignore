@@ -11,3 +11,5 @@ elastic-agent-*
 devlogs/
 .pytest_cache/
 xaiengine/
+migrations/versions/*
+*.pkl

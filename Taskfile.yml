@@ -228,19 +228,35 @@ tasks:
     desc: Bootstrap DB schema via Alembic (idempotent — safe to run on any DB)
     summary: |
       usage: task backend:db:upgrade
-      Runs `alembic upgrade head` inside the running backend container.
+      Runs `alembic upgrade head` from local app venv.
       On an empty DB this creates all tables; on an existing DB it's a no-op.
-    dir: infrastructure/backend
+    preconditions:
+      - sh: '[ -n "${VIRTUAL_ENV:-}" ] && [ "$(realpath "${VIRTUAL_ENV}")" = "$(realpath app/.venv)" ]'
+        msg: "Activate app venv first: source app/.venv/bin/activate"
     cmds:
-      - docker compose exec backend uv run alembic upgrade head
+      - uv run alembic upgrade head
+
+  backend:db:revision:
+    desc: Auto-generate a new Alembic revision from SQLAlchemy models
+    summary: |
+      usage: task backend:db:revision -- "message_here"
+      Example: task backend:db:revision -- baseline_schema
+      Uses one-off backend container and Alembic autogenerate.
+    preconditions:
+      - sh: '[ -n "${VIRTUAL_ENV:-}" ] && [ "$(realpath "${VIRTUAL_ENV}")" = "$(realpath app/.venv)" ]'
+        msg: "Activate app venv first: source app/.venv/bin/activate"
+    cmds:
+      - uv run alembic revision --autogenerate -m "{{.CLI_ARGS}}"
 
   backend:db:current:
     desc: Show the current Alembic revision applied to the DB
     summary: |
       usage: task backend:db:current
-    dir: infrastructure/backend
+    preconditions:
+      - sh: '[ -n "${VIRTUAL_ENV:-}" ] && [ "$(realpath "${VIRTUAL_ENV}")" = "$(realpath app/.venv)" ]'
+        msg: "Activate app venv first: source app/.venv/bin/activate"
     cmds:
-      - docker compose exec backend uv run alembic current
+      - uv run alembic current
 
   host-agent:stop:
     desc: Stop and remove the host agent

@@ -31,16 +31,30 @@ def get_subgraph(
     ml = request.app.state.ml
     g = ml.graph.k_hop_subgraph(node, k=k)
     edges_out: list[dict[str, Any]] = []
-    for u, v, key, data in g.edges(keys=True, data=True):  # MultiDiGraph subgraph
-        edges_out.append(
-            {
-                "source": u,
-                "target": v,
-                "key": key,
-                "action": data.get("action"),
-                "timestamp": data.get("timestamp"),
-            }
-        )
+    try:
+        # Multi(Graph|DiGraph) path.
+        for u, v, key, data in g.edges(keys=True, data=True):
+            edges_out.append(
+                {
+                    "source": u,
+                    "target": v,
+                    "key": key,
+                    "action": data.get("action"),
+                    "timestamp": data.get("timestamp"),
+                }
+            )
+    except TypeError:
+        # DiGraph/Graph path (no edge key support).
+        for u, v, data in g.edges(data=True):
+            edges_out.append(
+                {
+                    "source": u,
+                    "target": v,
+                    "key": None,
+                    "action": data.get("action"),
+                    "timestamp": data.get("timestamp"),
+                }
+            )
     nodes_out = [{"id": n, **g.nodes[n]} for n in g.nodes()]
     return {"center": node, "k": k, "nodes": nodes_out, "edges": edges_out}
 
