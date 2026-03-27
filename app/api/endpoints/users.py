@@ -13,6 +13,7 @@ from app.core.rbac import (
     can_read_users,
     can_update_own_profile,
     can_update_users,
+    is_full_access,
     user_role_from_db,
 )
 from app.db.models import User
@@ -46,7 +47,7 @@ def _enforce(db: Session, *, request: Request, actor: User, allowed: bool, actio
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
 
 def _maybe_audit_read(*, db: Session, request: Request, actor: User, action: str, role: UserRole) -> None:
-    if role in {UserRole.ADMIN, UserRole.AUDITOR}:
+    if is_full_access(role):
         record_access_audit(
             db,
             actor=actor,
@@ -78,7 +79,7 @@ def list_users(
     role = _role(current_user)
     _enforce(db, request=request, actor=current_user, allowed=can_read_users(role), action="user.list")
 
-    include_inactive_effective = include_inactive if role == UserRole.ADMIN else False
+    include_inactive_effective = include_inactive if is_full_access(role) else False
     items, total = user_service.list_users(
         db, skip=skip, limit=limit, include_inactive=include_inactive_effective
     )
@@ -97,7 +98,7 @@ def get_user_by_id(
     _enforce(db, request=request, actor=current_user, allowed=can_read_users(role), action="user.get")
 
     user = user_service.get_user(db, user_id)
-    if not user or (getattr(user, "is_active", True) is False and role != UserRole.ADMIN):
+    if not user or (getattr(user, "is_active", True) is False and not is_full_access(role)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     _maybe_audit_read(db=db, request=request, actor=current_user, action="user.read.detail", role=role)

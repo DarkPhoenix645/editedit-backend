@@ -23,8 +23,12 @@ class UserOut(BaseModel):
     @field_validator("role", mode="before")
     @classmethod
     def normalize_role(cls, v: object) -> object:
-        if isinstance(v, str) and v.lower() == "user":
-            return UserRole.INVESTIGATOR
+        if isinstance(v, str):
+            if v.strip().upper() == "USER":
+                return UserRole.INVESTIGATOR
+            legacy = {"ANALYST": UserRole.INVESTIGATOR, "AUDITOR": UserRole.IT_STAFF}
+            if v.upper() in legacy:
+                return legacy[v.upper()]
         return v
 
 class UserCreateAdmin(BaseModel):

@@ -143,7 +143,7 @@ def store_cold_block_payload(
                 extra.pop(k, None)
             logger.warning(
                 "Cold bucket missing Object Lock; uploading without retention headers. "
-                "Recreate the bucket with object lock (see infrastructure/backend/docker-compose.minio.yml)."
+                "Recreate the bucket with object lock (see infrastructure/backend/docker-compose.yml, minio-init)."
             )
             try:
                 resp = client.put_object(**extra)

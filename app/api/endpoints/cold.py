@@ -4,13 +4,14 @@ import json
 from typing import Any
 from uuid import UUID, uuid5, NAMESPACE_URL
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.deps import get_current_user
+from app.core.rbac import UserRole, can_verify_sealed_block, user_role_from_db
 from app.core.worm import read_worm_line
-from app.db.models import HotColdTrace, LogSource
+from app.db.models import HotColdTrace, LogSource, User
 from app.db.session import get_db
 from app.schemas.cold_ingest import ColdIngestResponse as ColdStackIngestResponse
 from app.schemas.ingest import ColdIngestResponse
@@ -24,6 +25,10 @@ from app.services.sealing_service import (
 )
 
 router = APIRouter()
+
+
+def _role(user: User) -> UserRole:
+    return user_role_from_db(getattr(user, "role", None)) or UserRole.INVESTIGATOR
 
 
 def _coerce_stack_body(payload: Any) -> list[dict[str, Any]]:
@@ -189,7 +194,9 @@ def rederive_ocsf_by_fingerprint(
 def verify_cold_block(
     block_id: UUID,
     db: Session = Depends(get_db),
-    _user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Recompute Merkle/chain and verify RSA (WORM `seal_event_batch` or `cold_stored_blocks` row)."""
+    if not can_verify_sealed_block(_role(current_user)):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
     return verify_sealed_block(db, block_id)

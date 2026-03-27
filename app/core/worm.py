@@ -60,7 +60,7 @@ def upload_to_worm(key: str, data: bytes, metadata: dict[str, str] | None = None
                 extra.pop(k, None)
             logger.warning(
                 "WORM bucket missing Object Lock; uploading without retention headers. "
-                "Recreate the bucket with object lock (see infrastructure/backend/docker-compose.minio.yml)."
+                "Recreate the bucket with object lock (see infrastructure/backend/docker-compose.yml, minio-init)."
             )
             try:
                 resp = client.put_object(**extra)

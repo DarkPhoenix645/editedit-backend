@@ -46,38 +46,32 @@
 
 ## FastAPI Backend Setup
 
-1. Create .env in `app/`:
+1. **Shared Docker network:** `task backend:up` creates `forensiq_shared` if it
+   does not exist (used by MinIO and the backend container).
 
-   ```bash
-   POSTGRES_USER=postgres
-   POSTGRES_PASSWORD=postgres
-   POSTGRES_DB=editedit-db
-   POSTGRES_HOST=db
-   POSTGRES_PORT=5432
+2. **Environment file** — values map to `app.core.config.Settings` (see
+   `app/core/config.py`). Copy `infrastructure/backend/.env.example` →
+   `infrastructure/backend/.env` and set secrets (`SECRET_KEY`,
+   `LOGSTASH_SHARED_SECRET`, DB passwords, `WORM_*`, cold `MINIO_*`, optional
+   `SMTP_*` for password-reset email, etc.). This path is used both by Docker
+   and by local / IDE runs. For Postgres on the host instead of the `db`
+   service, set `DATABASE_URL` with host `localhost`.
 
-   # IMP: use +psycopg in the URL for enabling the use of psycopgv3
-   DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/editedit-db
+   Use `postgresql+psycopg://...` in `DATABASE_URL` for psycopg v3.
 
-   HOST=0.0.0.0
-   PORT=8000
+3. **TLS:** The backend compose command expects ELK-generated certs at
+   `infrastructure/elk/volumes/certs/...` (see
+   `infrastructure/backend/docker-compose.yml`). Generate certs with
+   `task infra:certs:generate` after `task infra:mkdir`, or adjust the compose
+   command for HTTP-only dev.
 
-   SECRET_KEY=lalalala123
-   ```
+4. **Run the stack** (Postgres + MinIO + init buckets + API):
 
-2. Create .env in `infrastructure/backend`:
-
-   ```bash
-   POSTGRES_USER=postgres
-   POSTGRES_PASSWORD=postgres
-   POSTGRES_DB=editedit-db
-   POSTGRES_HOST=db
-   POSTGRES_PORT=5432
-   ```
-
-3. Run with:
    ```bash
    task backend:up
    ```
+
+   Apply DB schema: `task backend:db:upgrade`.
 
 ## MacOS Note Regarding Setup
 
@@ -125,14 +119,18 @@
    - ILM policy: `ocsf-logs-7d`
    - index template: `ocsf-logs-template` for `ocsf-logs-*`
 
-2. Start MinIO (local WORM)
+2. MinIO (local S3 / WORM + cold JSON buckets)
 
-   ```bash
-   task minio:up
-   ```
+   MinIO is part of `infrastructure/backend/docker-compose.yml` (`minio` +
+   `minio-init`). It starts automatically with `task backend:up`, or run
+   `task minio:up` if you only need object storage.
 
-   Console: [http://localhost:9001](http://localhost:9001) (`minioadmin` /
-   `minioadmin`)
+   Console: [http://localhost:9001](http://localhost:9001) (default `minioadmin`
+   / `minioadmin`; align with `WORM_ACCESS_KEY` / `WORM_SECRET_KEY` in `.env`).
+
+   To force-recreate the WORM bucket with object lock, set
+   `MINIO_WORM_RECREATE_BUCKET=true` once in `infrastructure/backend/.env`, then
+   recreate the `minio-init` container (see comments in the compose file).
 
 3. Kibana UI verification
    - **Kibana > Stack Management > Index Management**: confirm `ocsf-logs-*`

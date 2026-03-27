@@ -172,15 +172,17 @@ tasks:
       - docker exec elastic-agent-host sh -lc 'wc -l "{{.DEV_LOGS_FILE}}" && tail -n 3 "{{.DEV_LOGS_FILE}}"'
 
   backend:up:
-    desc: Start the FastAPI backend + Postgres (production mode, no reload)
+    desc: Start the FastAPI backend + MinIO + Postgres (production mode, no reload)
     summary: |
       usage: task backend:up
+      Creates `forensiq_shared` if missing (MinIO + backend share it). MinIO is defined in infrastructure/backend/docker-compose.yml.
     dir: infrastructure/backend
     cmds:
+      - docker network inspect forensiq_shared >/dev/null 2>&1 || docker network create forensiq_shared
       - docker compose up --build -d
 
   backend:down:
-    desc: Stop the FastAPI backend + Postgres
+    desc: Stop the FastAPI backend + MinIO instance + Postgres
     summary: |
       usage: task backend:down
     dir: infrastructure/backend
@@ -211,6 +213,7 @@ tasks:
       Any change to a file under app/ will trigger an automatic reload.
     dir: infrastructure/backend
     cmds:
+      - docker network inspect forensiq_shared >/dev/null 2>&1 || docker network create forensiq_shared
       - docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
   backend:dev:down:
@@ -317,13 +320,3 @@ tasks:
       - sleep 7
       - curl -s --cacert volumes/certs/ca/ca.crt -u "elastic:{{.ELASTIC_PASSWORD}}" "https://localhost:9200/ocsf-logs-*/_search?q=forensiq-smoke&sort=@timestamp:desc&size=5"
       - docker logs fastapi-backend --since 2m | rg "/api/cold/ingest|sealed|block_id|Invalid secret"
-
-  minio:up:
-    desc: Start local MinIO WORM services
-    cmds:
-      - docker compose -f infrastructure/backend/docker-compose.minio.yml up -d
-
-  minio:down:
-    desc: Stop local MinIO WORM services
-    cmds:
-      - docker compose -f infrastructure/backend/docker-compose.minio.yml down

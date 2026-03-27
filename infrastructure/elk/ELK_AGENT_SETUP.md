@@ -13,6 +13,8 @@ Elastic Agent for log collection using the Taskfile command.
 5. `jq` installed
 6. `infrastructure/elk/.env` configured
 
+**ForensIQ backend / MinIO:** The API stack (`task backend:up`) uses the external Docker network **`forensiq_shared`**, shared with **MinIO** (S3-compatible storage for WORM and cold paths). The Taskfile creates that network if missing. It is separate from `elk_default`; the backend container also joins `elk_default` when present. See the [README](../../README.md) FastAPI section.
+
 ---
 
 ## Part 0: Bootstrap Fleet outputs (recommended)

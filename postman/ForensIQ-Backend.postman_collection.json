@@ -2,46 +2,23 @@
   "info": {
     "_postman_id": "forensiq-backend-v1",
     "name": "ForensIQ Backend",
-    "description": "All `/api/*` routes. Use **LOCAL** or **PROD** Postman environment (`HOST_URL`). Vars: `accessToken` from Login/Register, `logstashSecret` for Logstash-authenticated routes.",
+    "description": "All `/api/*` routes. Use **LOCAL** or **PROD** Postman environment (`HOST_URL`). Vars: `accessToken` + `refreshToken` from Login/Register/Refresh, `logstashSecret` for Logstash-authenticated routes.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    {
-      "key": "accessToken",
-      "value": ""
-    },
-    {
-      "key": "logstashSecret",
-      "value": "change-me"
-    },
-    {
-      "key": "userEmail",
-      "value": "demo@example.com"
-    },
-    {
-      "key": "userPassword",
-      "value": "TestPass1a"
-    },
-    {
-      "key": "userName",
-      "value": "Demo User"
-    },
-    {
-      "key": "blockId",
-      "value": "00000000-0000-0000-0000-000000000001"
-    },
-    {
-      "key": "hypothesisId",
-      "value": "00000000-0000-0000-0000-000000000002"
-    },
-    {
-      "key": "graphNode",
-      "value": "10.0.0.1"
-    },
-    {
-      "key": "eventFingerprint",
-      "value": "sample-fingerprint-sha256"
-    }
+    { "key": "accessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "logstashSecret", "value": "change-me" },
+    { "key": "userEmail", "value": "demo@example.com" },
+    { "key": "userPassword", "value": "TestPass1a" },
+    { "key": "userName", "value": "Demo User" },
+    { "key": "userId", "value": "00000000-0000-0000-0000-000000000001" },
+    { "key": "orgId", "value": "00000000-0000-0000-0000-000000000010" },
+    { "key": "orgSlug", "value": "demo-org" },
+    { "key": "blockId", "value": "00000000-0000-0000-0000-000000000001" },
+    { "key": "hypothesisId", "value": "00000000-0000-0000-0000-000000000002" },
+    { "key": "graphNode", "value": "10.0.0.1" },
+    { "key": "eventFingerprint", "value": "sample-fingerprint-sha256" }
   ],
   "event": [
     {
@@ -65,26 +42,16 @@
           "name": "Register",
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": {
               "raw": "{{HOST_URL}}/api/auth/register",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "register"
-              ]
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "auth", "register"]
             },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\",\n  \"name\": \"{{userName}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "options": { "raw": { "language": "json" } }
             }
           },
           "event": [
@@ -95,9 +62,8 @@
                   "if (pm.response.code === 200 || pm.response.code === 201) {",
                   "    try {",
                   "        const j = pm.response.json();",
-                  "        if (j.access_token) {",
-                  "            pm.collectionVariables.set(\"accessToken\", j.access_token);",
-                  "        }",
+                  "        if (j.access_token) pm.collectionVariables.set(\"accessToken\", j.access_token);",
+                  "        if (j.refresh_token) pm.collectionVariables.set(\"refreshToken\", j.refresh_token);",
                   "    } catch (e) {}",
                   "}",
                   "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });"
@@ -114,28 +80,14 @@
             "header": [],
             "url": {
               "raw": "{{HOST_URL}}/api/auth/login",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ]
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "auth", "login"]
             },
             "body": {
               "mode": "urlencoded",
               "urlencoded": [
-                {
-                  "key": "username",
-                  "value": "{{userEmail}}",
-                  "type": "text"
-                },
-                {
-                  "key": "password",
-                  "value": "{{userPassword}}",
-                  "type": "text"
-                }
+                { "key": "username", "value": "{{userEmail}}", "type": "text" },
+                { "key": "password", "value": "{{userPassword}}", "type": "text" }
               ]
             }
           },
@@ -147,12 +99,102 @@
                   "if (pm.response.code === 200 || pm.response.code === 201) {",
                   "    try {",
                   "        const j = pm.response.json();",
-                  "        if (j.access_token) {",
-                  "            pm.collectionVariables.set(\"accessToken\", j.access_token);",
-                  "        }",
+                  "        if (j.access_token) pm.collectionVariables.set(\"accessToken\", j.access_token);",
+                  "        if (j.refresh_token) pm.collectionVariables.set(\"refreshToken\", j.refresh_token);",
                   "    } catch (e) {}",
                   "}",
                   "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{HOST_URL}}/api/auth/refresh",
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "auth", "refresh"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    try {",
+                  "        const j = pm.response.json();",
+                  "        if (j.access_token) pm.collectionVariables.set(\"accessToken\", j.access_token);",
+                  "        if (j.refresh_token) pm.collectionVariables.set(\"refreshToken\", j.refresh_token);",
+                  "    } catch (e) {}",
+                  "}",
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.eql(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Forgot password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{HOST_URL}}/api/auth/forgot-password",
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "auth", "forgot-password"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"202\", function () { pm.expect(pm.response.code).to.eql(202); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reset password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{HOST_URL}}/api/auth/reset-password",
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "auth", "reset-password"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"paste-token-from-email\",\n  \"new_password\": \"NewPass1a\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
                 ],
                 "type": "text/javascript"
               }
@@ -171,13 +213,8 @@
             "header": [],
             "url": {
               "raw": "{{HOST_URL}}/api/health",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "health"
-              ]
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "health"]
             }
           },
           "event": [
@@ -199,14 +236,8 @@
             "header": [],
             "url": {
               "raw": "{{HOST_URL}}/api/health/db-test",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "health",
-                "db-test"
-              ]
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "health", "db-test"]
             }
           },
           "event": [
@@ -231,21 +262,47 @@
           "request": {
             "method": "GET",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
             ],
             "url": {
               "raw": "{{HOST_URL}}/api/users/me",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "users",
-                "me"
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "users", "me"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    try {",
+                  "        const j = pm.response.json();",
+                  "        if (j.id) pm.collectionVariables.set(\"userId\", j.id);",
+                  "    } catch (e) {}",
+                  "}",
+                  "pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/users?skip=0&limit=50&include_inactive=false",
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "users"],
+              "query": [
+                { "key": "skip", "value": "0" },
+                { "key": "limit", "value": "50" },
+                { "key": "include_inactive", "value": "false" }
               ]
             }
           },
@@ -254,7 +311,417 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });"
+                  "if (pm.response.code === 200) {",
+                  "    try {",
+                  "        const j = pm.response.json();",
+                  "        if (j.items && j.items.length > 0 && j.items[0].id) {",
+                  "            pm.collectionVariables.set(\"userId\", j.items[0].id);",
+                  "        }",
+                  "    } catch (e) {}",
+                  "}",
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get by id",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/users/{{userId}}",
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "users", "{{userId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/users",
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "users"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newuser@example.com\",\n  \"username\": \"newuser01\",\n  \"password\": \"Str0ngPass\",\n  \"role\": \"INVESTIGATOR\",\n  \"is_active\": true,\n  \"name\": \"New User\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Patch me",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/users/me",
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "users", "me"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"demo_user\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Patch user (admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/users/{{userId}}",
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "users", "{{userId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete user (admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/users/{{userId}}",
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "users", "{{userId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"204 or 404\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([204, 404]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Organizations",
+      "item": [
+        {
+          "name": "Create",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/organizations",
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "organizations"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Demo Org\",\n  \"slug\": \"demo-org\",\n  \"description\": \"Postman seed\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        const j = pm.response.json();",
+                  "        if (j.id) pm.collectionVariables.set(\"orgId\", j.id);",
+                  "        if (j.slug) pm.collectionVariables.set(\"orgSlug\", j.slug);",
+                  "    } catch (e) {}",
+                  "}",
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/organizations?skip=0&limit=50&include_inactive=false",
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "organizations"],
+              "query": [
+                { "key": "skip", "value": "0" },
+                { "key": "limit", "value": "50" },
+                { "key": "include_inactive", "value": "false" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    try {",
+                  "        const j = pm.response.json();",
+                  "        if (j.items && j.items.length > 0 && j.items[0].id) {",
+                  "            pm.collectionVariables.set(\"orgId\", j.items[0].id);",
+                  "            pm.collectionVariables.set(\"orgSlug\", j.items[0].slug);",
+                  "        }",
+                  "    } catch (e) {}",
+                  "}",
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get by slug",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/organizations/slug/{{orgSlug}}",
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "organizations", "slug", "{{orgSlug}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get by id",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/organizations/{{orgId}}",
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "organizations", "{{orgId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Patch",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/organizations/{{orgId}}",
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "organizations", "{{orgId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated via Postman\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/organizations/{{orgId}}",
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "organizations", "{{orgId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"204 or 404\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([204, 404]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Audit Logs",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/audit-logs?skip=0&limit=50",
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "audit-logs"],
+              "query": [
+                { "key": "skip", "value": "0" },
+                { "key": "limit", "value": "50" },
+                { "key": "action", "value": "", "disabled": true },
+                { "key": "resource_type", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List filtered",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{HOST_URL}}/api/audit-logs?skip=0&limit=20&action=auth.login&resource_type=user",
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "audit-logs"],
+              "query": [
+                { "key": "skip", "value": "0" },
+                { "key": "limit", "value": "20" },
+                { "key": "action", "value": "auth.login" },
+                { "key": "resource_type", "value": "user" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"2xx\", function () { pm.expect(pm.response.code).to.be.below(300); });"
                 ],
                 "type": "text/javascript"
               }
@@ -271,30 +738,17 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "X-Logstash-Secret",
-                "value": "{{logstashSecret}}"
-              }
+              { "key": "X-Logstash-Secret", "value": "{{logstashSecret}}" }
             ],
             "url": {
               "raw": "{{HOST_URL}}/api/cold/ingest",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "cold",
-                "ingest"
-              ]
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "cold", "ingest"]
             },
             "body": {
               "mode": "raw",
               "raw": "[\n  {\n    \"@timestamp\": \"2026-01-15T12:00:00Z\",\n    \"message\": \"test\",\n    \"host\": {\n      \"name\": \"host-a\",\n      \"os\": {\n        \"name\": \"linux\"\n      }\n    },\n    \"agent\": {\n      \"id\": \"agent-test-1\"\n    },\n    \"event\": {\n      \"dataset\": \"iam.user\",\n      \"id\": \"evt-1\"\n    }\n  }\n]",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "options": { "raw": { "language": "json" } }
             }
           },
           "event": [
@@ -320,30 +774,17 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "X-Logstash-Secret",
-                "value": "{{logstashSecret}}"
-              }
+              { "key": "X-Logstash-Secret", "value": "{{logstashSecret}}" }
             ],
             "url": {
               "raw": "{{HOST_URL}}/api/cold/stack-ingest",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "cold",
-                "stack-ingest"
-              ]
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "cold", "stack-ingest"]
             },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"events\": [\n    {\n      \"@timestamp\": \"2026-01-15T12:00:00Z\",\n      \"message\": \"cold stack\",\n      \"host\": {\n        \"name\": \"host-b\"\n      },\n      \"event\": {\n        \"dataset\": \"system.auth\",\n        \"id\": \"evt-2\"\n      }\n    }\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "options": { "raw": { "language": "json" } }
             }
           },
           "event": [
@@ -371,15 +812,8 @@
             "header": [],
             "url": {
               "raw": "{{HOST_URL}}/api/cold/rederive/{{eventFingerprint}}",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "cold",
-                "rederive",
-                "{{eventFingerprint}}"
-              ]
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "cold", "rederive", "{{eventFingerprint}}"]
             }
           },
           "event": [
@@ -399,23 +833,12 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
             ],
             "url": {
               "raw": "{{HOST_URL}}/api/cold/verify/{{blockId}}",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "cold",
-                "verify",
-                "{{blockId}}"
-              ]
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "cold", "verify", "{{blockId}}"]
             }
           },
           "event": [
@@ -440,30 +863,17 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "X-Logstash-Secret",
-                "value": "{{logstashSecret}}"
-              }
+              { "key": "X-Logstash-Secret", "value": "{{logstashSecret}}" }
             ],
             "url": {
               "raw": "{{HOST_URL}}/api/ml/infer",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "ml",
-                "infer"
-              ]
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "ml", "infer"]
             },
             "body": {
               "mode": "raw",
               "raw": "[\n  {\n    \"@timestamp\": \"2026-01-15T12:00:00Z\",\n    \"forensiq\": {\n      \"trust_tier\": \"iam\",\n      \"event_fingerprint\": \"fp-demo-1\"\n    },\n    \"event\": {\n      \"id\": \"e1\"\n    },\n    \"ml\": {\n      \"source_ip\": \"10.0.0.1\",\n      \"user_id\": \"u1\",\n      \"action\": \"AUTH\",\n      \"outcome\": \"failure\"\n    }\n  }\n]",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "options": { "raw": { "language": "json" } }
             }
           },
           "event": [
@@ -488,21 +898,12 @@
           "request": {
             "method": "GET",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
             ],
             "url": {
               "raw": "{{HOST_URL}}/api/hypotheses",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "hypotheses"
-              ]
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "hypotheses"]
             }
           },
           "event": [
@@ -530,34 +931,17 @@
           "request": {
             "method": "GET",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
             ],
             "url": {
               "raw": "{{HOST_URL}}/api/hypotheses?offset=0&limit=50&min_score=0.0",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "hypotheses"
-              ],
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "hypotheses"],
               "query": [
-                {
-                  "key": "offset",
-                  "value": "0"
-                },
-                {
-                  "key": "limit",
-                  "value": "50"
-                },
-                {
-                  "key": "min_score",
-                  "value": "0.0"
-                }
+                { "key": "offset", "value": "0" },
+                { "key": "limit", "value": "50" },
+                { "key": "min_score", "value": "0.0" },
+                { "key": "case_id", "value": "", "disabled": true }
               ]
             }
           },
@@ -578,22 +962,12 @@
           "request": {
             "method": "GET",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
             ],
             "url": {
               "raw": "{{HOST_URL}}/api/hypotheses/{{hypothesisId}}",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "hypotheses",
-                "{{hypothesisId}}"
-              ]
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "hypotheses", "{{hypothesisId}}"]
             }
           },
           "event": [
@@ -613,31 +987,18 @@
           "request": {
             "method": "PATCH",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "url": {
               "raw": "{{HOST_URL}}/api/hypotheses/{{hypothesisId}}",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "hypotheses",
-                "{{hypothesisId}}"
-              ]
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "hypotheses", "{{hypothesisId}}"]
             },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"status\": \"confirmed\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "options": { "raw": { "language": "json" } }
             }
           },
           "event": [
@@ -657,32 +1018,18 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "url": {
               "raw": "{{HOST_URL}}/api/hypotheses/{{hypothesisId}}/counterfactual",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "hypotheses",
-                "{{hypothesisId}}",
-                "counterfactual"
-              ]
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "hypotheses", "{{hypothesisId}}", "counterfactual"]
             },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"modifiers\": {\n    \"trust_tier\": \"iot\",\n    \"anomaly_score\": 0.2\n  }\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "options": { "raw": { "language": "json" } }
             }
           },
           "event": [
@@ -707,29 +1054,13 @@
           "request": {
             "method": "GET",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
             ],
             "url": {
               "raw": "{{HOST_URL}}/api/graph/subgraph/{{graphNode}}?k=2",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "graph",
-                "subgraph",
-                "{{graphNode}}"
-              ],
-              "query": [
-                {
-                  "key": "k",
-                  "value": "2"
-                }
-              ]
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "graph", "subgraph", "{{graphNode}}"],
+              "query": [{ "key": "k", "value": "2" }]
             }
           },
           "event": [
@@ -749,22 +1080,12 @@
           "request": {
             "method": "GET",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" }
             ],
             "url": {
               "raw": "{{HOST_URL}}/api/graph/bridges",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "graph",
-                "bridges"
-              ]
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "graph", "bridges"]
             }
           },
           "event": [
@@ -789,32 +1110,18 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "url": {
               "raw": "{{HOST_URL}}/api/phase6/rag/query",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "phase6",
-                "rag",
-                "query"
-              ]
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "phase6", "rag", "query"]
             },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"query\": \"auth failure\",\n  \"strict_critic\": false\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "options": { "raw": { "language": "json" } }
             }
           },
           "event": [
@@ -834,32 +1141,18 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}",
-                "type": "text"
-              }
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "url": {
               "raw": "{{HOST_URL}}/api/phase6/counterfactual/simulate",
-              "host": [
-                "{{HOST_URL}}"
-              ],
-              "path": [
-                "api",
-                "phase6",
-                "counterfactual",
-                "simulate"
-              ]
+              "host": ["{{HOST_URL}}"],
+              "path": ["api", "phase6", "counterfactual", "simulate"]
             },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"hypothesis_id\": \"HYP-00000000\",\n  \"modify_attribute\": \"anomaly_score\",\n  \"modify_value\": 0.1\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "options": { "raw": { "language": "json" } }
             }
           },
           "event": [

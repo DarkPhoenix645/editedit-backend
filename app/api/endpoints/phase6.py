@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.core.deps import get_current_user
+from app.core.rbac import UserRole, can_use_ml_interactive, user_role_from_db
+from app.db.models import User
 from app.ml.counterfactual import simulate_counterfactual
 from app.ml.schemas import (
     CounterfactualRequest,
@@ -20,12 +22,22 @@ logger = logging.getLogger("forensiq.api.phase6")
 router = APIRouter()
 
 
+def _role(user: User) -> UserRole:
+    return user_role_from_db(getattr(user, "role", None)) or UserRole.INVESTIGATOR
+
+
+def _require_ml(user: User) -> None:
+    if not can_use_ml_interactive(_role(user)):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+
+
 @router.post("/rag/query", response_model=RAGQueryResponse)
 def query_rag(
     req: RAGQueryRequest,
     request: Request,
-    _user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    _require_ml(current_user)
     ml = request.app.state.ml
     result = ml.rag.query(req.query, req.context_event_ids)
 
@@ -53,8 +65,9 @@ def query_rag(
 def run_counterfactual(
     req: CounterfactualRequest,
     request: Request,
-    _user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    _require_ml(current_user)
     ml = request.app.state.ml
     result = simulate_counterfactual(
         req.hypothesis_id,

@@ -4,6 +4,9 @@ from urllib.parse import urlparse
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+REPO_ROOT = BASE_DIR.parent
+# Same file as Docker (`infrastructure/backend/docker-compose.yml` `env_file`).
+BACKEND_ENV_FILE = REPO_ROOT / "infrastructure" / "backend" / ".env"
 
 
 def _normalize_minio_endpoint(v: object) -> str:
@@ -33,6 +36,13 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 30
     FRONTEND_RESET_PASSWORD_URL: str = ""
+    # Password reset email (optional). If SMTP_HOST is empty, reset links are only logged.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
+    SMTP_USE_TLS: bool = True
     DATABASE_URL: str = ""
     LOGSTASH_SHARED_SECRET: str = ""
     WORM_ENDPOINT: str = "http://minio:9000"
@@ -71,7 +81,7 @@ class Settings(BaseSettings):
     MINIO_AUTO_CREATE_BUCKET: bool = True
 
     model_config = SettingsConfigDict(
-        env_file=BASE_DIR / ".env",
+        env_file=BACKEND_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
     )

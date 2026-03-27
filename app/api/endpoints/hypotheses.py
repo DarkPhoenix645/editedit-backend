@@ -5,14 +5,21 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
+from app.core.rbac import (
+    UserRole,
+    can_mutate_hypothesis,
+    can_use_ml_interactive,
+    can_view_hypotheses,
+    user_role_from_db,
+)
 from app.core.worm import read_worm_line
-from app.db.models import ForensicHypothesis, HotColdTrace, HypothesisEvidenceMap
+from app.db.models import ForensicHypothesis, HotColdTrace, HypothesisEvidenceMap, User
 from app.db.session import get_db
 from app.ml.counterfactual import simulate_counterfactual_modifiers
 from app.ml.schemas import (
@@ -26,6 +33,28 @@ from app.ml.schemas import (
 logger = logging.getLogger("forensiq.api.hypotheses")
 
 router = APIRouter()
+
+
+def _role(user: User) -> UserRole:
+    return user_role_from_db(getattr(user, "role", None)) or UserRole.INVESTIGATOR
+
+
+def _require_hypothesis_read(user: User) -> None:
+    r = _role(user)
+    if not can_view_hypotheses(r):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+
+
+def _require_ml_interactive(user: User) -> None:
+    r = _role(user)
+    if not can_use_ml_interactive(r):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+
+
+def _require_hypothesis_mutate(user: User) -> None:
+    r = _role(user)
+    if not can_mutate_hypothesis(r):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
 
 
 def _confidence_to_severity(conf: float | None) -> str:
@@ -78,8 +107,9 @@ def list_hypotheses(
     offset: int = 0,
     limit: int = 50,
     db: Session = Depends(get_db),
-    _user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    _require_hypothesis_read(current_user)
     q = db.query(ForensicHypothesis).order_by(ForensicHypothesis.created_at.desc())
     if case_id is not None:
         q = q.filter(ForensicHypothesis.case_id == case_id)
@@ -131,8 +161,9 @@ def hypothesis_counterfactual(
     body: CounterfactualModifiersBody,
     request: Request,
     db: Session = Depends(get_db),
-    _user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    _require_ml_interactive(current_user)
     row = _resolve_hypothesis(db, hyp_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Hypothesis not found")
@@ -158,8 +189,9 @@ def hypothesis_counterfactual(
 def get_hypothesis(
     hyp_id: str,
     db: Session = Depends(get_db),
-    _user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    _require_hypothesis_read(current_user)
     row = _resolve_hypothesis(db, hyp_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Hypothesis not found")
@@ -238,8 +270,9 @@ def patch_hypothesis(
     hyp_id: str,
     body: HypothesisPatch,
     db: Session = Depends(get_db),
-    _user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    _require_hypothesis_mutate(current_user)
     row = _resolve_hypothesis(db, hyp_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Hypothesis not found")
