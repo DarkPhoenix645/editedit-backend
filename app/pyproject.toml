@@ -10,7 +10,6 @@ dependencies = [
     "cryptography>=42.0.0",
     "elasticsearch[async]>=8.13.0",
     "fastapi==0.110.0",
-    "minio>=7.2.20",
     "passlib[bcrypt]==1.7.4",
     "psycopg[binary]>=3.3.3",
     "pydantic-settings==2.2.1",

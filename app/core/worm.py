@@ -72,11 +72,19 @@ def upload_to_worm(key: str, data: bytes, metadata: dict[str, str] | None = None
     return str(resp.get("ETag", "")).strip('"')
 
 
+def get_object_bytes(*, bucket: str, key: str, version_id: str | None = None) -> bytes:
+    """Read a full object from the same S3/MinIO instance as WORM (any bucket, optional version)."""
+    client = get_worm_client()
+    kwargs: dict[str, Any] = {"Bucket": bucket, "Key": key}
+    if version_id:
+        kwargs["VersionId"] = version_id
+    resp = client.get_object(**kwargs)
+    return resp["Body"].read()
+
+
 def read_worm_object(key: str) -> bytes:
     """Full object read (used for block integrity verification)."""
-    client = get_worm_client()
-    resp = client.get_object(Bucket=settings.WORM_BUCKET, Key=key)
-    return resp["Body"].read()
+    return get_object_bytes(bucket=settings.WORM_BUCKET, key=key)
 
 
 def read_worm_line(key: str, offset: int) -> bytes:

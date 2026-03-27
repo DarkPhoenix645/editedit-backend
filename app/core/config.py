@@ -1,7 +1,6 @@
 from pathlib import Path
 from urllib.parse import urlparse
 
-from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -64,20 +63,12 @@ class Settings(BaseSettings):
     AFTER_HOURS_START_HOUR: int = 19
     AFTER_HOURS_END_HOUR: int = 7
 
-    MINIO_ENDPOINT: str = "minio:9000"
-    MINIO_ACCESS_KEY: str = "minioadmin"
-    MINIO_SECRET_KEY: str = "minioadmin"
-    MINIO_SECURE: bool = False
+    # Cold sealed JSON objects: same MinIO as WORM_* (endpoint/creds); separate bucket/prefix.
     MINIO_BUCKET: str = "cold-blocks"
     MINIO_PREFIX: str = "sealed-blocks"
     MINIO_RETENTION_MODE: str = "COMPLIANCE"
     MINIO_RETENTION_DAYS: int = 3650
     MINIO_AUTO_CREATE_BUCKET: bool = True
-
-    @field_validator("MINIO_ENDPOINT", mode="before")
-    @classmethod
-    def _endpoint_host_port(cls, v: object) -> str:
-        return _normalize_minio_endpoint(v)
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
