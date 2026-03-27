@@ -1,5 +1,12 @@
 # editedit-backend
 
+## Submission Artifacts
+
+Deployed Frontend Link: https://forensiq-frontend-deployed.vercel.app/ Backend +
+ML Services Source Code: https://github.com/DarkPhoenix645/editedit-backend
+Frontend Service Source Code:
+https://github.com/DarkPhoenix645/forensiq-frontend
+
 ## Infra Setup & Run Instructions
 
 ## TLS Strategy (Dev + AWS)
