@@ -12,6 +12,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     volumes:
       - ../../app:/app/app
       - ../../alembic.ini:/app/alembic.ini

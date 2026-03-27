@@ -11,6 +11,7 @@ from sqlalchemy import (
     Text,
     Index,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from sqlalchemy.orm import relationship
@@ -18,6 +19,25 @@ from sqlalchemy.sql import func
 import uuid
 
 from app.db.base import Base
+from app.core.rbac import UserRole
+
+class Organization(Base):
+    __tablename__ = "organizations"
+    __table_args__ = (UniqueConstraint("slug", name="uq_organizations_slug"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=False, index=True)
+    slug = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    is_active = Column(Boolean, nullable=False, server_default=text("true"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
 
 class HealthCheck(Base):
     __tablename__ = "health_check"
@@ -29,13 +49,26 @@ class User(Base):
     __tablename__ = "users"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String, unique=True, index=True, nullable=False)
+    username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     name = Column(String, nullable=False)
-    role = Column(String, default="user", nullable=False)
+    is_active = Column(Boolean, nullable=False, server_default=text("true"))
+    role = Column(String, nullable=False, default=UserRole.INVESTIGATOR.value)
+    last_login = Column(DateTime(timezone=True), nullable=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
     cases = relationship("ForensicCase", back_populates="investigator")
     audit_logs = relationship("AccessAuditLog", back_populates="user")
     decisions = relationship("InvestigatorDecision", back_populates="investigator")
+    refresh_tokens = relationship("RefreshToken", back_populates="user")
+    password_reset_tokens = relationship("PasswordResetToken", back_populates="user")
 
 class ForensicCase(Base):
     __tablename__ = "forensic_cases"
@@ -99,6 +132,31 @@ class AccessAuditLog(Base):
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="audit_logs")
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    hashed_token = Column(String, nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked = Column(Boolean, nullable=False, server_default=text("false"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="refresh_tokens")
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    hashed_token = Column(String, nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="password_reset_tokens")
     
 class SealedBlock(Base):
     __tablename__ = "sealed_blocks"
@@ -137,7 +195,15 @@ class ColdStoredBlock(Base):
 
     block_id = Column(UUID(as_uuid=True), ForeignKey("sealed_blocks.id"), primary_key=True)
     source_id = Column(UUID(as_uuid=True), ForeignKey("log_sources.id"), nullable=False, index=True)
-    events = Column(JSONB, nullable=False)
+    object_bucket = Column(String, nullable=False)
+    object_key = Column(String, nullable=False, index=True)
+    object_version_id = Column(String, nullable=True)
+    object_etag = Column(String, nullable=False)
+    object_sha256_hex = Column(String, nullable=False, index=True)
+    object_size_bytes = Column(BigInteger, nullable=False)
+    object_retention_mode = Column(String, nullable=False)
+    object_retention_until = Column(DateTime(timezone=True), nullable=False)
+    object_legal_hold = Column(Boolean, nullable=False, server_default=text("false"))
     leaf_hashes = Column(JSONB, nullable=False)
     merkle_root_hex = Column(String, nullable=False, index=True)
     chain_hash_hex = Column(String, nullable=False, index=True)
